@@ -1,0 +1,360 @@
+package rules.leave
+
+import com.function.model.EmployeeFact
+import com.function.model.LeaveFact
+import com.function.model.LeaveResult
+import java.math.BigDecimal
+
+// ============================================================
+// COMPANY_A OVERRIDES
+// - Marriage Leave  : 8 days (same as Labour Standards Act, explicit)
+// - Personal Leave  : 14 days (same as Labour Standards Act, explicit)
+// - Annual Leave    : Labour Standards Act tiers (same as base)
+// - Family Care     : 7 days (same as Labour Standards Act, explicit)
+// - Birthday Leave  : NOT applicable
+// ============================================================
+
+// ── Marriage Leave ────────────────────────────────────────
+
+rule "Marriage Leave - Exceeds Limit - CompanyA"
+    salience 20
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A")
+        $leave  : LeaveFact(leaveTypeName == "MARRIAGE",
+                            usedDaysThisYear + leaveDays.intValue() > 8)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 8 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Marriage Leave - Exceeds Limit");
+        $result.setMessage("[CompanyA] Marriage leave limit is 8 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Marriage Leave - Approved - CompanyA"
+    salience 15
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A")
+        $leave  : LeaveFact(leaveTypeName == "MARRIAGE",
+                            usedDaysThisYear + leaveDays.intValue() <= 8)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 8 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Marriage Leave - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("[CompanyA] Marriage leave: full pay for " + $leave.getLeaveDays() + " day(s). No deduction from perfect attendance bonus.");
+        update($result);
+end
+
+// ── Personal Leave ────────────────────────────────────────
+
+rule "Personal Leave - Exceeds Limit - CompanyA"
+    salience 20
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A")
+        $leave  : LeaveFact(leaveTypeName == "PERSONAL",
+                            usedDaysThisYear + leaveDays.intValue() > 14)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 14 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Personal Leave - Exceeds Limit");
+        $result.setMessage("[CompanyA] Personal leave annual limit is 14 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Personal Leave - Approved - CompanyA"
+    salience 15
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A")
+        $leave  : LeaveFact(leaveTypeName == "PERSONAL",
+                            usedDaysThisYear + leaveDays.intValue() <= 14)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 14 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Personal Leave - Approved");
+        $result.setAffectFullAttendance(true);
+        $result.setMessage("[CompanyA] Personal leave: unpaid. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+// ── Annual Leave (same tiers as base, explicit for CompanyA) ──
+
+rule "Annual Leave 6 Months - Exceeds Limit - CompanyA"
+    salience 20
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A",
+                               seniorityMonths >= 6, seniorityMonths < 12)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() > 3)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 3 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Annual Leave 6 Months - Exceeds Limit");
+        $result.setMessage("[CompanyA] Annual leave (6 months) limit is 3 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Annual Leave 6 Months - Approved - CompanyA"
+    salience 15
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A",
+                               seniorityMonths >= 6, seniorityMonths < 12)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() <= 3)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 3 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Annual Leave 6 Months - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("[CompanyA] Annual leave (6 months): full pay, 3 days entitlement.");
+        update($result);
+end
+
+rule "Annual Leave 1 Year - Exceeds Limit - CompanyA"
+    salience 20
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A",
+                               seniorityMonths >= 12, seniorityMonths < 24)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() > 7)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 7 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Annual Leave 1 Year - Exceeds Limit");
+        $result.setMessage("[CompanyA] Annual leave (1 year) limit is 7 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Annual Leave 1 Year - Approved - CompanyA"
+    salience 15
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A",
+                               seniorityMonths >= 12, seniorityMonths < 24)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() <= 7)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 7 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Annual Leave 1 Year - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("[CompanyA] Annual leave (1 year): full pay, 7 days entitlement.");
+        update($result);
+end
+
+rule "Annual Leave 2 Years - Exceeds Limit - CompanyA"
+    salience 20
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A",
+                               seniorityMonths >= 24, seniorityMonths < 36)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() > 10)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 10 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Annual Leave 2 Years - Exceeds Limit");
+        $result.setMessage("[CompanyA] Annual leave (2 years) limit is 10 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Annual Leave 2 Years - Approved - CompanyA"
+    salience 15
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A",
+                               seniorityMonths >= 24, seniorityMonths < 36)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() <= 10)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 10 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Annual Leave 2 Years - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("[CompanyA] Annual leave (2 years): full pay, 10 days entitlement.");
+        update($result);
+end
+
+rule "Annual Leave 3 to 5 Years - Exceeds Limit - CompanyA"
+    salience 20
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A",
+                               seniorityMonths >= 36, seniorityMonths < 60)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() > 14)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 14 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Annual Leave 3 to 5 Years - Exceeds Limit");
+        $result.setMessage("[CompanyA] Annual leave (3-5 years) limit is 14 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Annual Leave 3 to 5 Years - Approved - CompanyA"
+    salience 15
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A",
+                               seniorityMonths >= 36, seniorityMonths < 60)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() <= 14)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 14 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Annual Leave 3 to 5 Years - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("[CompanyA] Annual leave (3-5 years): full pay, 14 days entitlement.");
+        update($result);
+end
+
+rule "Annual Leave 5 to 10 Years - Exceeds Limit - CompanyA"
+    salience 20
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A",
+                               seniorityMonths >= 60, seniorityMonths < 120)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() > 15)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 15 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Annual Leave 5 to 10 Years - Exceeds Limit");
+        $result.setMessage("[CompanyA] Annual leave (5-10 years) limit is 15 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Annual Leave 5 to 10 Years - Approved - CompanyA"
+    salience 15
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A",
+                               seniorityMonths >= 60, seniorityMonths < 120)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() <= 15)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 15 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Annual Leave 5 to 10 Years - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("[CompanyA] Annual leave (5-10 years): full pay, 15 days entitlement.");
+        update($result);
+end
+
+rule "Annual Leave Over 10 Years - Exceeds Limit - CompanyA"
+    salience 20
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A", seniorityMonths >= 120)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            eval($leave.getUsedDaysThisYear() + $leave.getLeaveDays().intValue()
+                                 > Math.min(15 + (int)($emp.getSeniorityMonths()/12.0) - 10, 30)))
+        $result : LeaveResult(appliedRule == null)
+    then
+        int entitled  = (int) Math.min(15 + (int)($emp.getSeniorityMonths()/12.0) - 10, 30);
+        int remaining = entitled - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Annual Leave Over 10 Years - Exceeds Limit");
+        $result.setMessage("[CompanyA] Annual leave (10+ years) limit is " + entitled + " days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Annual Leave Over 10 Years - Approved - CompanyA"
+    salience 15
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A", seniorityMonths >= 120)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            eval($leave.getUsedDaysThisYear() + $leave.getLeaveDays().intValue()
+                                 <= Math.min(15 + (int)($emp.getSeniorityMonths()/12.0) - 10, 30)))
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int entitled  = (int) Math.min(15 + (int)($emp.getSeniorityMonths()/12.0) - 10, 30);
+        int remaining = entitled - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Annual Leave Over 10 Years - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("[CompanyA] Annual leave (10+ years): full pay, " + entitled + " days entitlement.");
+        update($result);
+end
+
+// ── Family Care Leave ─────────────────────────────────────
+
+rule "Family Care Leave - Exceeds Limit - CompanyA"
+    salience 20
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A")
+        $leave  : LeaveFact(leaveTypeName == "FAMILY_CARE",
+                            usedDaysThisYear + leaveDays.intValue() > 7)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 7 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Family Care Leave - Exceeds Limit");
+        $result.setMessage("[CompanyA] Family care leave annual limit is 7 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Family Care Leave - Approved - CompanyA"
+    salience 15
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A")
+        $leave  : LeaveFact(leaveTypeName == "FAMILY_CARE",
+                            usedDaysThisYear + leaveDays.intValue() <= 7)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 7 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Family Care Leave - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("[CompanyA] Family care leave: unpaid. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+// ── Birthday Leave (NOT applicable for CompanyA) ──────────
+
+rule "Birthday Leave - Not Applicable - CompanyA"
+    salience 20
+    when
+        $emp    : EmployeeFact(companyId == "COMPANY_A")
+        $leave  : LeaveFact(leaveTypeName == "BIRTHDAY")
+        $result : LeaveResult(appliedRule == null)
+    then
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Birthday Leave - Not Applicable");
+        $result.setMessage("[CompanyA] Birthday leave is not part of this company's policy.");
+        update($result);
+end

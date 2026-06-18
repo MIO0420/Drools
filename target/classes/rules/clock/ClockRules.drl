@@ -1,0 +1,118 @@
+// 路徑：Graduate/src/main/resources/rules/clock/ClockRules.drl
+package rules.clock
+
+import com.function.model.ClockFact
+import com.function.model.ClockResult
+
+// ════════════════════════════════════════════════════════════════
+//  COMP_A：圍欄半徑 100 m
+// ════════════════════════════════════════════════════════════════
+
+rule "COMP_A - Location Out of Range"
+    when
+        $clock  : ClockFact(companyId == "COMP_A",
+                            distanceToCompany != null,
+                            distanceToCompany.doubleValue() > 100)
+        $result : ClockResult()
+    then
+        $result.addViolation(
+            "Clock - Location Out of Range",
+            "[Geo-Fence Violation] Clock location is "
+                + $clock.getDistanceToCompany().setScale(2, java.math.RoundingMode.HALF_UP)
+                + " m from the office, exceeding the allowed radius of 100 m."
+        );
+end
+
+rule "COMP_A - Clock-In Location Valid"
+    when
+        $clock  : ClockFact(companyId == "COMP_A",
+                            recordType == "clock_in",
+                            distanceToCompany != null,
+                            distanceToCompany.doubleValue() <= 100)
+        $result : ClockResult()
+    then
+        $result.addNote(
+            "[Clock-In OK] Location verified. Distance to office: "
+                + $clock.getDistanceToCompany().setScale(2, java.math.RoundingMode.HALF_UP)
+                + " m."
+        );
+end
+
+rule "COMP_A - Clock-Out Location Valid"
+    when
+        $clock  : ClockFact(companyId == "COMP_A",
+                            recordType == "clock_out",
+                            distanceToCompany != null,
+                            distanceToCompany.doubleValue() <= 100)
+        $result : ClockResult()
+    then
+        $result.addNote(
+            "[Clock-Out OK] Location verified. Distance to office: "
+                + $clock.getDistanceToCompany().setScale(2, java.math.RoundingMode.HALF_UP)
+                + " m."
+        );
+end
+
+// ════════════════════════════════════════════════════════════════
+//  COMP_B：圍欄半徑 500 m
+// ════════════════════════════════════════════════════════════════
+
+rule "COMP_B - Location Out of Range"
+    when
+        $clock  : ClockFact(companyId == "COMP_B",
+                            distanceToCompany != null,
+                            distanceToCompany.doubleValue() > 500)
+        $result : ClockResult()
+    then
+        $result.addViolation(
+            "Clock - Location Out of Range",
+            "[Geo-Fence Violation] Clock location is "
+                + $clock.getDistanceToCompany().setScale(2, java.math.RoundingMode.HALF_UP)
+                + " m from the office, exceeding the allowed radius of 500 m."
+        );
+end
+
+rule "COMP_B - Clock-In Location Valid"
+    when
+        $clock  : ClockFact(companyId == "COMP_B",
+                            recordType == "clock_in",
+                            distanceToCompany != null,
+                            distanceToCompany.doubleValue() <= 500)
+        $result : ClockResult()
+    then
+        $result.addNote(
+            "[Clock-In OK] Location verified. Distance to office: "
+                + $clock.getDistanceToCompany().setScale(2, java.math.RoundingMode.HALF_UP)
+                + " m."
+        );
+end
+
+rule "COMP_B - Clock-Out Location Valid"
+    when
+        $clock  : ClockFact(companyId == "COMP_B",
+                            recordType == "clock_out",
+                            distanceToCompany != null,
+                            distanceToCompany.doubleValue() <= 500)
+        $result : ClockResult()
+    then
+        $result.addNote(
+            "[Clock-Out OK] Location verified. Distance to office: "
+                + $clock.getDistanceToCompany().setScale(2, java.math.RoundingMode.HALF_UP)
+                + " m."
+        );
+end
+
+// ════════════════════════════════════════════════════════════════
+//  共用：缺少 GPS 座標
+// ════════════════════════════════════════════════════════════════
+
+rule "Clock - Missing Location"
+    when
+        $clock  : ClockFact(distanceToCompany == null)
+        $result : ClockResult()
+    then
+        $result.addViolation(
+            "Clock - Missing Location",
+            "[Missing Location] No GPS coordinates provided. Geo-fence validation skipped."
+        );
+end

@@ -1,0 +1,590 @@
+package rules.schedule
+
+// ── 資料模型 ──────────────────────────────────────────────────
+import com.function.model.SchedulingFact
+import com.function.model.SchedulingResult
+import java.math.BigDecimal
+
+// ── RuleUtils 靜態工具方法 ────────────────────────────────────
+import static com.function.util.RuleUtils.add
+import static com.function.util.RuleUtils.subtract
+import static com.function.util.RuleUtils.multiply
+import static com.function.util.RuleUtils.divide
+import static com.function.util.RuleUtils.gt
+import static com.function.util.RuleUtils.gte
+import static com.function.util.RuleUtils.lt
+import static com.function.util.RuleUtils.lte
+import static com.function.util.RuleUtils.eq
+
+// ============================================================
+// DRL function 區塊：排班專屬計算邏輯
+//    適用於：本規則檔專屬、或 AI 動態新增的一次性計算
+//    優勢：AI 生成新規則時可同時在此區塊新增 function，
+//          完全不需要修改任何 Java 檔案
+//
+// ── 可用 SchedulingFact 欄位參考 ────────────────────────────
+//   workTimeType                      → String  (GENERAL / TWO_WEEK_FLEXIBLE / FOUR_WEEK_FLEXIBLE / EIGHT_WEEK_FLEXIBLE)
+//
+//   ── 第 30 條｜工時數值 ──────────────────────────────────
+//   dailyWorkHours                    → int     每日正常工時
+//   weeklyWorkHours                   → int     當週正常工時
+//   biweeklyWorkHours                 → int     二週總工時（上限 80H）
+//   fourWeekWorkHours                 → int     四週總工時（上限 160H）
+//   eightWeekWorkHours                → int     八週總工時（上限 320H）
+//   consecutiveWorkDays               → int     連續上班天數
+//   restDaysPerWeek                   → int     每 7 日休假天數
+//
+//   ── 第 30-1 條｜四週變形工時 ────────────────────────────
+//   mandatoryDaysOffBiweekly          → int     每 2 週例假天數（應 >= 2）
+//   totalDaysOffFourWeeks             → int     四週例假+休息日合計（應 >= 8）
+//
+//   ── 第 30-3 條｜八週變形工時 ────────────────────────────
+//   restDaysBiweeklyEightWeek         → int     八週制每 2 週例假+休息日（應 >= 4）
+//   restDaysEightWeek                 → int     八週例假+休息日合計（應 >= 16）
+//
+//   ── 第 32 條｜加班上限 ──────────────────────────────────
+//   dailyTotalHours                   → int     當日正常+加班合計（上限 12H）
+//   monthlyOvertimeHours              → int     當月加班時數（標準上限 46H，彈性 54H）
+//   quarterlyOvertimeHours            → int     當季加班時數（彈性上限 138H）
+//   laborCouncilAgreed                → boolean 是否取得勞資會議同意
+//
+//   ── 第 32-1 條｜補休 ────────────────────────────────────
+//   compensatoryLeaveExpired          → boolean 補休是否已逾 6 個月
+//   compensatoryLeaveHours            → BigDecimal 待補休時數
+//
+//   ── 第 34 條｜輪班換班間距 ──────────────────────────────
+//   shiftWorker                       → boolean 是否為輪班制勞工
+//   shiftChangeRestHours              → int     換班休息時數（標準 >= 11H，最低 >= 8H）
+//
+//   ── 第 35 條｜工作中休息 ────────────────────────────────
+//   continuousWorkHours               → int     連續工作時數
+//   breakMinutes                      → int     休息分鐘數（連續 4H 應 >= 30 分鐘）
+//
+//   ── 第 36 條｜例假與休息日 ──────────────────────────────
+//   mandatoryDayOffPerWeek            → boolean 每 7 日是否有 1 日例假
+//   restDayPerWeek                    → boolean 每 7 日是否有 1 日休息日
+//   mandatoryDayOffScheduledAsWork    → boolean 例假日是否被排為上班日
+//   legalExceptionForMandatoryDayOff  → boolean 是否符合法定例外情形（天災、事變、突發事件）
+//   mandatoryDayOffOvertimePaid       → boolean 例假日合法出勤後是否已加倍計給工資
+//   restDayWorked                     → boolean 休息日是否出勤
+//   restDayOvertimePaid               → boolean 休息日出勤是否已計給加班費
+//
+//   ── 第 37 條｜國定假日 ──────────────────────────────────
+//   nationalHolidayScheduledAsWork    → boolean 國定假日是否排班出勤
+//   nationalHolidayAdjustAgreed       → boolean 是否已與勞工協商同意
+//   nationalHolidayOvertimePaid       → boolean 國定假日出勤是否已計給加班費
+//
+//   ── 第 38 條第 4 項｜特別休假 ───────────────────────────
+//   annualLeaveDeniedByEmployer       → boolean 雇主是否拒絕特別休假申請
+//   annualLeaveAdjustmentAgreed       → boolean 是否已與勞工協商調整日期
+// ============================================================
+
+// （AI 動態新增 function 請插入此區塊下方）
+
+
+
+// ============================================================
+// 第 30 條第 1 項｜一般正常工時
+// ============================================================
+
+rule "Schedule Art30-1 - Daily Hours Exceeded"
+    when
+        $sch    : SchedulingFact(workTimeType == "GENERAL", dailyWorkHours > 8)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-1 - Daily Hours Exceeded",
+            "【第30條第1項】一般工時：每日正常工時不得超過 8 小時，目前排定 " + $sch.getDailyWorkHours() + " 小時，違反規定。"
+        );
+end
+
+rule "Schedule Art30-1 - Weekly Hours Exceeded"
+    when
+        $sch    : SchedulingFact(workTimeType == "GENERAL", weeklyWorkHours > 40)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-1 - Weekly Hours Exceeded",
+            "【第30條第1項】一般工時：每週正常工時不得超過 40 小時，目前排定 " + $sch.getWeeklyWorkHours() + " 小時，違反規定。"
+        );
+end
+
+rule "Schedule Art30-1 - Rest Days Per 7 Days Insufficient"
+    when
+        $sch    : SchedulingFact(workTimeType == "GENERAL", restDaysPerWeek < 2)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-1 - Rest Days Per 7 Days Insufficient",
+            "【第30條第1項】一般工時：每 7 日中應有 2 日休假（1 日例假 + 1 日休息日），目前僅排定 " + $sch.getRestDaysPerWeek() + " 日，違反規定。"
+        );
+end
+
+// ============================================================
+// 第 30 條第 2 項｜二週變形工時
+// ============================================================
+
+rule "Schedule Art30-2 - Daily Hours Exceeded"
+    when
+        $sch    : SchedulingFact(workTimeType == "TWO_WEEK_FLEXIBLE", dailyWorkHours > 10)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-2 - Daily Hours Exceeded",
+            "【第30條第2項】二週變形工時：每日正常工時不得超過 10 小時，目前排定 " + $sch.getDailyWorkHours() + " 小時，違反規定。"
+        );
+end
+
+rule "Schedule Art30-2 - Weekly Hours Exceeded"
+    when
+        $sch    : SchedulingFact(workTimeType == "TWO_WEEK_FLEXIBLE", weeklyWorkHours > 48)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-2 - Weekly Hours Exceeded",
+            "【第30條第2項】二週變形工時：單週工時不得超過 48 小時（含跨週挪移上限），目前排定 " + $sch.getWeeklyWorkHours() + " 小時，違反規定。"
+        );
+end
+
+rule "Schedule Art30-2 - Biweekly Total Hours Exceeded"
+    when
+        $sch    : SchedulingFact(workTimeType == "TWO_WEEK_FLEXIBLE", biweeklyWorkHours > 80)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-2 - Biweekly Total Hours Exceeded",
+            "【第30條第2項】二週變形工時：二週正常工作總時數不得超過 80 小時，目前排定 " + $sch.getBiweeklyWorkHours() + " 小時，違反規定。"
+        );
+end
+
+rule "Schedule Art30-2 - Consecutive Work Days Exceeded"
+    when
+        $sch    : SchedulingFact(workTimeType == "TWO_WEEK_FLEXIBLE", consecutiveWorkDays > 6)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-2 - Consecutive Work Days Exceeded",
+            "【第30條第2項】二週變形工時：每 7 日仍須有 1 日例假，最多連續上班 6 天，目前排定連續 " + $sch.getConsecutiveWorkDays() + " 天，違反規定。"
+        );
+end
+
+// ============================================================
+// 第 30 條第 3 項｜八週變形工時
+// ============================================================
+
+rule "Schedule Art30-3 - Daily Hours Exceeded"
+    when
+        $sch    : SchedulingFact(workTimeType == "EIGHT_WEEK_FLEXIBLE", dailyWorkHours > 8)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-3 - Daily Hours Exceeded",
+            "【第30條第3項】八週變形工時：每日正常工時仍不得超過 8 小時，目前排定 " + $sch.getDailyWorkHours() + " 小時，違反規定。"
+        );
+end
+
+rule "Schedule Art30-3 - Weekly Hours Exceeded"
+    when
+        $sch    : SchedulingFact(workTimeType == "EIGHT_WEEK_FLEXIBLE", weeklyWorkHours > 48)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-3 - Weekly Hours Exceeded",
+            "【第30條第3項】八週變形工時：單週正常工時不得超過 48 小時，目前排定 " + $sch.getWeeklyWorkHours() + " 小時，違反規定。"
+        );
+end
+
+rule "Schedule Art30-3 - Eight Week Total Hours Exceeded"
+    when
+        $sch    : SchedulingFact(workTimeType == "EIGHT_WEEK_FLEXIBLE", eightWeekWorkHours > 320)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-3 - Eight Week Total Hours Exceeded",
+            "【第30條第3項】八週變形工時：八週正常工作總時數不得超過 320 小時，目前排定 " + $sch.getEightWeekWorkHours() + " 小時，違反規定。"
+        );
+end
+
+rule "Schedule Art30-3 - Mandatory Day Off Missing Per 7 Days"
+    // 新增：八週制每 7 日仍須有 1 日例假，與 consecutiveWorkDays 規則互補，明確對應法條文字
+    when
+        $sch    : SchedulingFact(workTimeType == "EIGHT_WEEK_FLEXIBLE", mandatoryDayOffPerWeek == false)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-3 - Mandatory Day Off Missing Per 7 Days",
+            "【第30條第3項】八週變形工時：勞工每 7 日中至少應有 1 日例假，目前排班未安排例假，違反規定。"
+        );
+end
+
+rule "Schedule Art30-3 - Consecutive Work Days Exceeded"
+    when
+        $sch    : SchedulingFact(workTimeType == "EIGHT_WEEK_FLEXIBLE", consecutiveWorkDays > 6)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-3 - Consecutive Work Days Exceeded",
+            "【第30條第3項】八週變形工時：每 7 日仍須有 1 日例假，最多連續上班 6 天，目前排定連續 " + $sch.getConsecutiveWorkDays() + " 天，違反規定。"
+        );
+end
+
+rule "Schedule Art30-3 - Biweekly Rest Days Insufficient"
+    when
+        $sch    : SchedulingFact(workTimeType == "EIGHT_WEEK_FLEXIBLE", restDaysBiweeklyEightWeek < 4)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-3 - Biweekly Rest Days Insufficient",
+            "【第30條第3項】八週變形工時：每 2 週內例假及休息日合計至少應有 4 日，目前僅排定 " + $sch.getRestDaysBiweeklyEightWeek() + " 日，違反規定。"
+        );
+end
+
+rule "Schedule Art30-3 - Eight Week Rest Days Insufficient"
+    when
+        $sch    : SchedulingFact(workTimeType == "EIGHT_WEEK_FLEXIBLE", restDaysEightWeek < 16)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-3 - Eight Week Rest Days Insufficient",
+            "【第30條第3項】八週變形工時：八週內例假及休息日合計至少應有 16 日，目前僅排定 " + $sch.getRestDaysEightWeek() + " 日，違反規定。"
+        );
+end
+
+// ============================================================
+// 第 30-1 條｜四週變形工時
+// 注意：四週變形工時不受每週 40 小時限制，僅以四週總工時 160 小時為上限，
+//       故本區塊不設每週工時檢查規則。
+// ============================================================
+
+rule "Schedule Art30-1A - Daily Hours Exceeded"
+    when
+        $sch    : SchedulingFact(workTimeType == "FOUR_WEEK_FLEXIBLE", dailyWorkHours > 10)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-1A - Daily Hours Exceeded",
+            "【第30條之1】四週變形工時：每日正常工時不得超過 10 小時，目前排定 " + $sch.getDailyWorkHours() + " 小時，違反規定。"
+        );
+end
+
+rule "Schedule Art30-1A - Four Week Total Hours Exceeded"
+    when
+        $sch    : SchedulingFact(workTimeType == "FOUR_WEEK_FLEXIBLE", fourWeekWorkHours > 160)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-1A - Four Week Total Hours Exceeded",
+            "【第30條之1】四週變形工時：四週正常工作總時數不得超過 160 小時，目前排定 " + $sch.getFourWeekWorkHours() + " 小時，違反規定。"
+        );
+end
+
+rule "Schedule Art30-1A - Biweekly Mandatory Days Off Insufficient"
+    when
+        $sch    : SchedulingFact(workTimeType == "FOUR_WEEK_FLEXIBLE", mandatoryDaysOffBiweekly < 2)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-1A - Biweekly Mandatory Days Off Insufficient",
+            "【第30條之1】四週變形工時：每 2 週內至少應有 2 日例假，目前僅排定 " + $sch.getMandatoryDaysOffBiweekly() + " 日，違反規定。"
+        );
+end
+
+rule "Schedule Art30-1A - Four Week Total Days Off Insufficient"
+    when
+        $sch    : SchedulingFact(workTimeType == "FOUR_WEEK_FLEXIBLE", totalDaysOffFourWeeks < 8)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-1A - Four Week Total Days Off Insufficient",
+            "【第30條之1】四週變形工時：四週內例假及休息日合計至少應有 8 日，目前僅排定 " + $sch.getTotalDaysOffFourWeeks() + " 日，違反規定。"
+        );
+end
+
+rule "Schedule Art30-1A - Consecutive Work Days Exceeded"
+    when
+        $sch    : SchedulingFact(workTimeType == "FOUR_WEEK_FLEXIBLE", consecutiveWorkDays > 12)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art30-1A - Consecutive Work Days Exceeded",
+            "【第30條之1】四週變形工時：極端情況下最多連續上班 12 天，目前排定連續 " + $sch.getConsecutiveWorkDays() + " 天，違反規定。"
+        );
+end
+
+// ============================================================
+// 第 32 條｜延長工時（加班）上限
+// ============================================================
+
+rule "Schedule Art32 - Daily Total Hours Exceeded"
+    when
+        $sch    : SchedulingFact(dailyTotalHours > 12)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art32 - Daily Total Hours Exceeded",
+            "【第32條】每日正常工時加計加班，一日總工時絕對不得超過 12 小時，目前排定 " + $sch.getDailyTotalHours() + " 小時，違反規定。"
+        );
+end
+
+rule "Schedule Art32 - Monthly Overtime Exceeded No Agreement"
+    when
+        $sch    : SchedulingFact(monthlyOvertimeHours > 46, laborCouncilAgreed == false)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art32 - Monthly Overtime Exceeded No Agreement",
+            "【第32條】每月加班總時數不得超過 46 小時，目前累計 " + $sch.getMonthlyOvertimeHours() + " 小時，違反規定。"
+        );
+end
+
+rule "Schedule Art32 - Monthly Overtime Exceeded With Agreement"
+    when
+        $sch    : SchedulingFact(monthlyOvertimeHours > 54, laborCouncilAgreed == true)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art32 - Monthly Overtime Exceeded With Agreement",
+            "【第32條】經勞資會議同意後單月上限為 54 小時，目前累計 " + $sch.getMonthlyOvertimeHours() + " 小時，已超過彈性上限，違反規定。"
+        );
+end
+
+rule "Schedule Art32 - Quarterly Overtime Hours Exceeded"
+    when
+        $sch    : SchedulingFact(quarterlyOvertimeHours > 138, laborCouncilAgreed == true)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art32 - Quarterly Overtime Hours Exceeded",
+            "【第32條】經勞資會議同意後，每連續 3 個月加班總時數不得超過 138 小時，目前累計 " + $sch.getQuarterlyOvertimeHours() + " 小時，違反規定。"
+        );
+end
+
+// ============================================================
+// 第 32-1 條｜補休制度
+// ============================================================
+
+rule "Schedule Art32-1 - Compensatory Leave Expired"
+    when
+        $sch    : SchedulingFact(compensatoryLeaveExpired == true)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art32-1 - Compensatory Leave Expired",
+            "【第32-1條】補休應於加班日起算 6 個月內安排完畢，目前有補休時數已逾期未排定，須折算工資發給。"
+        );
+end
+
+rule "Schedule Art32-1 - Compensatory Leave Within Deadline"
+    when
+        $sch    : SchedulingFact(compensatoryLeaveExpired == false, compensatoryLeaveHours > 0)
+        $result : SchedulingResult()
+    then
+        $result.addNote(
+            "【第32-1條】補休時數 " + $sch.getCompensatoryLeaveHours() + " 小時，尚在 6 個月期限內，請於期限前安排完畢。"
+        );
+end
+
+// ============================================================
+// 第 34 條｜輪班換班間距
+// 加入 shiftWorker == true 前提，避免非輪班者預設值 0 被誤判
+// ============================================================
+
+rule "Schedule Art34 - Shift Change Rest Interval Below Standard"
+    when
+        $sch    : SchedulingFact(shiftWorker == true, shiftChangeRestHours < 11, shiftChangeRestHours >= 8)
+        $result : SchedulingResult()
+    then
+        $result.addWarning(
+            "【第34條】換班間距低於標準 11 小時（目前 " + $sch.getShiftChangeRestHours() + " 小時），須確認已取得中央主管機關公告及勞資同意，方可適用縮短例外。"
+        );
+end
+
+rule "Schedule Art34 - Shift Change Rest Interval Below Minimum"
+    when
+        $sch    : SchedulingFact(shiftWorker == true, shiftChangeRestHours < 8)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art34 - Shift Change Rest Interval Below Minimum",
+            "【第34條】換班間距絕對不得少於 8 小時，目前排定僅 " + $sch.getShiftChangeRestHours() + " 小時，違反規定。"
+        );
+end
+
+rule "Schedule Art34 - Shift Change Rest Interval Compliant"
+    when
+        $sch    : SchedulingFact(shiftWorker == true, shiftChangeRestHours >= 11)
+        $result : SchedulingResult()
+    then
+        $result.addNote(
+            "【第34條】換班間距 " + $sch.getShiftChangeRestHours() + " 小時，符合法定 11 小時以上規定。"
+        );
+end
+
+// ============================================================
+// 第 35 條｜工作中休息時間
+// ============================================================
+
+rule "Schedule Art35 - Break Time Insufficient"
+    when
+        $sch    : SchedulingFact(continuousWorkHours >= 4, breakMinutes < 30)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art35 - Break Time Insufficient",
+            "【第35條】工作連續滿 4 小時應至少給予 30 分鐘休息，目前排定連續工作 " + $sch.getContinuousWorkHours() + " 小時但休息僅 " + $sch.getBreakMinutes() + " 分鐘，違反規定。"
+        );
+end
+
+rule "Schedule Art35 - Break Time Compliant"
+    when
+        $sch    : SchedulingFact(continuousWorkHours >= 4, breakMinutes >= 30)
+        $result : SchedulingResult()
+    then
+        $result.addNote(
+            "【第35條】連續工作 " + $sch.getContinuousWorkHours() + " 小時，休息時間 " + $sch.getBreakMinutes() + " 分鐘，符合法定規定。"
+        );
+end
+
+// ============================================================
+// 第 36 條｜例假與休息日
+// ============================================================
+
+rule "Schedule Art36 - Mandatory Day Off Missing Per 7 Days"
+    when
+        $sch    : SchedulingFact(mandatoryDayOffPerWeek == false)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art36 - Mandatory Day Off Missing Per 7 Days",
+            "【第36條】每 7 日中應有 1 日例假，目前排班未安排例假，違反規定。"
+        );
+end
+
+rule "Schedule Art36 - Rest Day Missing Per 7 Days"
+    when
+        $sch    : SchedulingFact(restDayPerWeek == false)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art36 - Rest Day Missing Per 7 Days",
+            "【第36條】每 7 日中應有 1 日休息日，目前排班未安排休息日，違反規定。"
+        );
+end
+
+rule "Schedule Art36 - Mandatory Day Off Scheduled on Work Day Illegally"
+    when
+        $sch    : SchedulingFact(mandatoryDayOffScheduledAsWork == true, legalExceptionForMandatoryDayOff == false)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art36 - Mandatory Day Off Scheduled on Work Day Illegally",
+            "【第36條】例假日不得排定出勤，僅天災、事變、突發事件等法定例外情形方可出勤，目前排班不符例外條件，違反規定。"
+        );
+end
+
+rule "Schedule Art36 - Mandatory Day Off Legal Exception Without Overtime Pay"
+    // 新增：例假日符合法定例外出勤，但未加倍計給工資
+    when
+        $sch    : SchedulingFact(mandatoryDayOffScheduledAsWork == true, legalExceptionForMandatoryDayOff == true, mandatoryDayOffOvertimePaid == false)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art36 - Mandatory Day Off Legal Exception Without Overtime Pay",
+            "【第36條／工資加倍規定】例假日雖符合法定例外得出勤，但出勤工資應加倍發給，目前未依規定給付，違反規定。"
+        );
+end
+
+rule "Schedule Art36 - Mandatory Day Off Legal Exception With Overtime Pay"
+    // 新增：例假日合法出勤且已加倍計給工資
+    when
+        $sch    : SchedulingFact(mandatoryDayOffScheduledAsWork == true, legalExceptionForMandatoryDayOff == true, mandatoryDayOffOvertimePaid == true)
+        $result : SchedulingResult()
+    then
+        $result.addNote(
+            "【第36條】例假日出勤符合法定例外情形，且已依法加倍計給工資，符合規定。"
+        );
+end
+
+rule "Schedule Art36 - Rest Day Worked Without Overtime Pay"
+    when
+        $sch    : SchedulingFact(restDayWorked == true, restDayOvertimePaid == false)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art36 - Rest Day Worked Without Overtime Pay",
+            "【第36條／工資加倍規定】休息日出勤須依法加倍計給工資，目前未依規定給付加班費，違反規定。"
+        );
+end
+
+rule "Schedule Art36 - Rest Day Worked With Overtime Pay"
+    when
+        $sch    : SchedulingFact(restDayWorked == true, restDayOvertimePaid == true)
+        $result : SchedulingResult()
+    then
+        $result.addNote(
+            "【第36條】休息日出勤已依法計給加班費，符合規定。"
+        );
+end
+
+// ============================================================
+// 第 37 條｜國定假日
+// ============================================================
+
+rule "Schedule Art37 - National Holiday Scheduled Without Agreement"
+    when
+        $sch    : SchedulingFact(nationalHolidayScheduledAsWork == true, nationalHolidayAdjustAgreed == false)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art37 - National Holiday Scheduled Without Agreement",
+            "【第37條】國定假日不得任意排班出勤，若需出勤須事先徵得勞工個人同意，目前未取得同意，違反規定。"
+        );
+end
+
+rule "Schedule Art37 - National Holiday Worked Without Overtime Pay"
+    // 新增：國定假日已取得同意出勤，但未加倍計給工資
+    when
+        $sch    : SchedulingFact(nationalHolidayScheduledAsWork == true, nationalHolidayAdjustAgreed == true, nationalHolidayOvertimePaid == false)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art37 - National Holiday Worked Without Overtime Pay",
+            "【第37條／工資加倍規定】國定假日出勤已取得勞工同意，但出勤工資應加倍發給，目前未依規定給付，違反規定。"
+        );
+end
+
+rule "Schedule Art37 - National Holiday Worked With Overtime Pay"
+    // 新增：國定假日已取得同意出勤且已加倍計給工資
+    when
+        $sch    : SchedulingFact(nationalHolidayScheduledAsWork == true, nationalHolidayAdjustAgreed == true, nationalHolidayOvertimePaid == true)
+        $result : SchedulingResult()
+    then
+        $result.addNote(
+            "【第37條】國定假日出勤已取得勞工同意，且已依法加倍計給工資，符合規定。"
+        );
+end
+
+// ============================================================
+// 第 38 條第 4 項｜特別休假排定主導權
+// ============================================================
+
+rule "Schedule Art38-4 - Annual Leave Denied By Employer Illegally"
+    when
+        $sch    : SchedulingFact(annualLeaveDeniedByEmployer == true, annualLeaveAdjustmentAgreed == false)
+        $result : SchedulingResult()
+    then
+        $result.addViolation(
+            "Schedule Art38-4 - Annual Leave Denied By Employer Illegally",
+            "【第38條第4項】特別休假由勞工自行排定，雇主原則上不得拒絕，目前未與勞工協商即拒絕，違反規定。"
+        );
+end
+
+rule "Schedule Art38-4 - Annual Leave Adjusted With Agreement"
+    when
+        $sch    : SchedulingFact(annualLeaveDeniedByEmployer == true, annualLeaveAdjustmentAgreed == true)
+        $result : SchedulingResult()
+    then
+        $result.addNote(
+            "【第38條第4項】特別休假已與勞工協商調整日期，請確認雙方同意紀錄留存。"
+        );
+end

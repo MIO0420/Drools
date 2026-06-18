@@ -1,0 +1,9 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "java",
+    "GEMINI_API_KEY": "AIzaSyCvBr04dTWenMMPms0MjBGa1ie9rU61FmY",
+    "AZURE_STORAGE_CONNECTION_STRING": "DefaultEndpointsProtocol=https;AccountName=pmxhr9eaa;AccountKey=04weG19ndoY/aTNMarO5tWBqxTT5kz0dQouuTOAgwkrJvQJHoqoBrIT9DZSgCHWoWZHQNUhcCznc+AStrXJDrQ==;EndpointSuffix=core.windows.net"
+  }
+}

@@ -1,0 +1,1067 @@
+package rules.leave
+
+import com.function.model.EmployeeFact
+import com.function.model.LeaveFact
+import com.function.model.LeaveResult
+import java.math.BigDecimal
+import java.math.RoundingMode
+
+// ============================================================
+// MARRIAGE LEAVE - BASE (Labour Standards Act: max 8 days)
+// ============================================================
+
+rule "Marriage Leave - Exceeds Limit - Base"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "MARRIAGE",
+                            usedDaysThisYear + leaveDays.intValue() > 8)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 8 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Marriage Leave - Exceeds Limit");
+        $result.setMessage("Marriage leave limit is 8 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Marriage Leave - Approved - Base"
+    salience 5
+    when
+        $leave  : LeaveFact(leaveTypeName == "MARRIAGE",
+                            usedDaysThisYear + leaveDays.intValue() <= 8)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 8 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Marriage Leave - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Marriage leave: full pay for " + $leave.getLeaveDays() + " day(s). No deduction from perfect attendance bonus.");
+        update($result);
+end
+
+// ============================================================
+// BEREAVEMENT LEAVE (all companies follow Labour Standards Act)
+// ============================================================
+
+rule "Bereavement Leave - Spouse or Parents - Exceeds Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "BEREAVEMENT",
+                            bereavementRelation in ("SPOUSE","PARENT","STEP_PARENT","ADOPTIVE_PARENT"),
+                            leaveDays.intValue() > 8)
+        $result : LeaveResult(appliedRule == null)
+    then
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Bereavement Leave - Spouse or Parents - Exceeds Limit");
+        $result.setMessage("Bereavement leave (spouse/parents) limit is 8 days. Application exceeds the legal limit.");
+        update($result);
+end
+
+rule "Bereavement Leave - Spouse or Parents - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "BEREAVEMENT",
+                            bereavementRelation in ("SPOUSE","PARENT","STEP_PARENT","ADOPTIVE_PARENT"),
+                            leaveDays.intValue() <= 8)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Bereavement Leave - Spouse or Parents - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Bereavement leave (spouse/parents): full pay for " + $leave.getLeaveDays() + " day(s).");
+        update($result);
+end
+
+rule "Bereavement Leave - Grandparents or Children - Exceeds Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "BEREAVEMENT",
+                            bereavementRelation in ("GRANDPARENT","CHILD","SPOUSE_PARENT"),
+                            leaveDays.intValue() > 6)
+        $result : LeaveResult(appliedRule == null)
+    then
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Bereavement Leave - Grandparents or Children - Exceeds Limit");
+        $result.setMessage("Bereavement leave (grandparents/children/spouse's parents) limit is 6 days.");
+        update($result);
+end
+
+rule "Bereavement Leave - Grandparents or Children - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "BEREAVEMENT",
+                            bereavementRelation in ("GRANDPARENT","CHILD","SPOUSE_PARENT"),
+                            leaveDays.intValue() <= 6)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Bereavement Leave - Grandparents or Children - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Bereavement leave (grandparents/children/spouse's parents): full pay for " + $leave.getLeaveDays() + " day(s).");
+        update($result);
+end
+
+rule "Bereavement Leave - Siblings - Exceeds Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "BEREAVEMENT",
+                            bereavementRelation == "SIBLING",
+                            leaveDays.intValue() > 3)
+        $result : LeaveResult(appliedRule == null)
+    then
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Bereavement Leave - Siblings - Exceeds Limit");
+        $result.setMessage("Bereavement leave (siblings) limit is 3 days.");
+        update($result);
+end
+
+rule "Bereavement Leave - Siblings - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "BEREAVEMENT",
+                            bereavementRelation == "SIBLING",
+                            leaveDays.intValue() <= 3)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Bereavement Leave - Siblings - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Bereavement leave (siblings): full pay for " + $leave.getLeaveDays() + " day(s).");
+        update($result);
+end
+
+// ============================================================
+// PERSONAL LEAVE - BASE (Labour Standards Act: max 14 days)
+// ============================================================
+
+rule "Personal Leave - Exceeds Limit - Base"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "PERSONAL",
+                            usedDaysThisYear + leaveDays.intValue() > 14)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 14 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Personal Leave - Exceeds Limit");
+        $result.setMessage("Personal leave annual limit is 14 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Personal Leave - Approved - Base"
+    salience 5
+    when
+        $leave  : LeaveFact(leaveTypeName == "PERSONAL",
+                            usedDaysThisYear + leaveDays.intValue() <= 14)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 14 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Personal Leave - Approved");
+        $result.setAffectFullAttendance(true);
+        $result.setMessage("Personal leave: unpaid. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+// ============================================================
+// SICK LEAVE (all companies follow Labour Standards Act)
+// ============================================================
+
+rule "Sick Leave Outpatient - Exceeds Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "SICK", hospitalized == false,
+                            usedDaysThisYear + leaveDays.intValue() > 30)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 30 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Sick Leave Outpatient - Exceeds Limit");
+        $result.setMessage("Sick leave (outpatient) annual limit is 30 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Sick Leave Outpatient - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "SICK", hospitalized == false,
+                            usedDaysThisYear + leaveDays.intValue() <= 30)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 30 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Sick Leave Outpatient - Approved");
+        $result.setAffectFullAttendance(true);
+        $result.setMessage("Sick leave (outpatient): half pay. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Sick Leave Hospitalized - Exceeds Annual Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "SICK", hospitalized == true,
+                            usedDaysThisYear + leaveDays.intValue() > 365)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 365 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Sick Leave Hospitalized - Exceeds Annual Limit");
+        $result.setMessage("Sick leave (hospitalized) annual limit is 365 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Sick Leave Hospitalized Within 30 Days - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "SICK", hospitalized == true,
+                            usedDaysThisYear + leaveDays.intValue() <= 30)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 365 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Sick Leave Hospitalized Within 30 Days - Approved");
+        $result.setAffectFullAttendance(true);
+        $result.setMessage("Sick leave (hospitalized, first 30 days): half pay. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Sick Leave Hospitalized Over 30 Days - Approved"
+    salience 5
+    when
+        $leave  : LeaveFact(leaveTypeName == "SICK", hospitalized == true,
+                            usedDaysThisYear > 30,
+                            usedDaysThisYear + leaveDays.intValue() <= 365)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 365 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Sick Leave Hospitalized Over 30 Days - Approved");
+        $result.setAffectFullAttendance(true);
+        $result.setMessage("Sick leave (hospitalized, after 30 days): unpaid. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+// ============================================================
+// ANNUAL LEAVE - BASE (Labour Standards Act tiers)
+// ============================================================
+
+rule "Annual Leave 6 Months - Exceeds Limit - Base"
+    salience 10
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 6, seniorityMonths < 12)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() > 3)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 3 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Annual Leave 6 Months - Exceeds Limit");
+        $result.setMessage("Annual leave (6 months) limit is 3 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Annual Leave 6 Months - Approved - Base"
+    salience 5
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 6, seniorityMonths < 12)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() <= 3)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 3 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Annual Leave 6 Months - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Annual leave (6 months): full pay, 3 days entitlement.");
+        update($result);
+end
+
+rule "Annual Leave 1 Year - Exceeds Limit - Base"
+    salience 10
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 12, seniorityMonths < 24)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() > 7)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 7 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Annual Leave 1 Year - Exceeds Limit");
+        $result.setMessage("Annual leave (1 year) limit is 7 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Annual Leave 1 Year - Approved - Base"
+    salience 5
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 12, seniorityMonths < 24)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() <= 7)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 7 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Annual Leave 1 Year - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Annual leave (1 year): full pay, 7 days entitlement.");
+        update($result);
+end
+
+rule "Annual Leave 2 Years - Exceeds Limit - Base"
+    salience 10
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 24, seniorityMonths < 36)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() > 10)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 10 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Annual Leave 2 Years - Exceeds Limit");
+        $result.setMessage("Annual leave (2 years) limit is 10 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Annual Leave 2 Years - Approved - Base"
+    salience 5
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 24, seniorityMonths < 36)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() <= 10)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 10 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Annual Leave 2 Years - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Annual leave (2 years): full pay, 10 days entitlement.");
+        update($result);
+end
+
+rule "Annual Leave 3 to 5 Years - Exceeds Limit - Base"
+    salience 10
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 36, seniorityMonths < 60)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() > 14)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 14 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Annual Leave 3 to 5 Years - Exceeds Limit");
+        $result.setMessage("Annual leave (3-5 years) limit is 14 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Annual Leave 3 to 5 Years - Approved - Base"
+    salience 5
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 36, seniorityMonths < 60)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() <= 14)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 14 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Annual Leave 3 to 5 Years - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Annual leave (3-5 years): full pay, 14 days entitlement.");
+        update($result);
+end
+
+rule "Annual Leave 5 to 10 Years - Exceeds Limit - Base"
+    salience 10
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 60, seniorityMonths < 120)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() > 15)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 15 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Annual Leave 5 to 10 Years - Exceeds Limit");
+        $result.setMessage("Annual leave (5-10 years) limit is 15 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Annual Leave 5 to 10 Years - Approved - Base"
+    salience 5
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 60, seniorityMonths < 120)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            usedDaysThisYear + leaveDays.intValue() <= 15)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 15 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Annual Leave 5 to 10 Years - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Annual leave (5-10 years): full pay, 15 days entitlement.");
+        update($result);
+end
+
+rule "Annual Leave Over 10 Years - Exceeds Limit - Base"
+    salience 10
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 120)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            eval($leave.getUsedDaysThisYear() + $leave.getLeaveDays().intValue()
+                                 > Math.min(15 + (int)($emp.getSeniorityMonths()/12.0) - 10, 30)))
+        $result : LeaveResult(appliedRule == null)
+    then
+        int entitled  = (int) Math.min(15 + (int)($emp.getSeniorityMonths()/12.0) - 10, 30);
+        int remaining = entitled - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Annual Leave Over 10 Years - Exceeds Limit");
+        $result.setMessage("Annual leave (10+ years) limit is " + entitled + " days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Annual Leave Over 10 Years - Approved - Base"
+    salience 5
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 120)
+        $leave  : LeaveFact(leaveTypeName == "ANNUAL",
+                            eval($leave.getUsedDaysThisYear() + $leave.getLeaveDays().intValue()
+                                 <= Math.min(15 + (int)($emp.getSeniorityMonths()/12.0) - 10, 30)))
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int entitled  = (int) Math.min(15 + (int)($emp.getSeniorityMonths()/12.0) - 10, 30);
+        int remaining = entitled - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Annual Leave Over 10 Years - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Annual leave (10+ years): full pay, " + entitled + " days entitlement.");
+        update($result);
+end
+
+// ============================================================
+// MENSTRUAL LEAVE (all companies follow Labour Standards Act)
+// ============================================================
+
+rule "Menstrual Leave - Exceeds Annual Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "MENSTRUAL", usedDaysThisYear >= 12)
+        $result : LeaveResult(appliedRule == null)
+    then
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Menstrual Leave - Exceeds Annual Limit");
+        $result.setMessage("Menstrual leave annual limit of 12 days has been exhausted.");
+        update($result);
+end
+
+rule "Menstrual Leave - Exceeds Daily Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "MENSTRUAL", leaveDays.intValue() > 1)
+        $result : LeaveResult(appliedRule == null)
+    then
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Menstrual Leave - Exceeds Daily Limit");
+        $result.setMessage("Menstrual leave is limited to 1 day per request.");
+        update($result);
+end
+
+rule "Menstrual Leave Within 3 Days Per Year - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "MENSTRUAL",
+                            usedDaysThisYear < 3, leaveDays.intValue() == 1)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 12 - $leave.getUsedDaysThisYear() - 1;
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Menstrual Leave Within 3 Days Per Year - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Menstrual leave (first 3 days/year): half pay. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Menstrual Leave Over 3 Days Per Year - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "MENSTRUAL",
+                            usedDaysThisYear >= 3, usedDaysThisYear < 12,
+                            leaveDays.intValue() == 1)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 12 - $leave.getUsedDaysThisYear() - 1;
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Menstrual Leave Over 3 Days Per Year - Approved");
+        $result.setAffectFullAttendance(true);
+        $result.setMessage("Menstrual leave (from 4th day/year): half pay, counted toward sick leave. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+// ============================================================
+// FAMILY CARE LEAVE - BASE (Labour Standards Act: max 7 days)
+// ============================================================
+
+rule "Family Care Leave - Exceeds Limit - Base"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "FAMILY_CARE",
+                            usedDaysThisYear + leaveDays.intValue() > 7)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 7 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Family Care Leave - Exceeds Limit");
+        $result.setMessage("Family care leave annual limit is 7 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Family Care Leave - Approved - Base"
+    salience 5
+    when
+        $leave  : LeaveFact(leaveTypeName == "FAMILY_CARE",
+                            usedDaysThisYear + leaveDays.intValue() <= 7)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 7 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Family Care Leave - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Family care leave: unpaid. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+// ============================================================
+// PATERNITY LEAVE (all companies follow Labour Standards Act)
+// ============================================================
+
+rule "Paternity Leave - Exceeds Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "PATERNITY",
+                            usedDaysThisYear + leaveDays.intValue() > 7)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 7 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Paternity Leave - Exceeds Limit");
+        $result.setMessage("Paternity leave limit is 7 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Paternity Leave - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "PATERNITY",
+                            usedDaysThisYear + leaveDays.intValue() <= 7)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 7 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Paternity Leave - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Paternity leave: full pay, 7 days. No deduction from perfect attendance bonus.");
+        update($result);
+end
+
+// ============================================================
+// MATERNITY LEAVE (all companies follow Labour Standards Act)
+// ============================================================
+
+rule "Maternity Leave - Exceeds Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "MATERNITY", leaveDays.intValue() > 56)
+        $result : LeaveResult(appliedRule == null)
+    then
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Maternity Leave - Exceeds Limit");
+        $result.setMessage("Maternity leave limit is 56 days. Application exceeds the legal limit.");
+        update($result);
+end
+
+rule "Maternity Leave Full Pay - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 6)
+        $leave  : LeaveFact(leaveTypeName == "MATERNITY", leaveDays.intValue() <= 56)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 56 - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Maternity Leave Full Pay - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Maternity leave (seniority >= 6 months): full pay, 8 weeks.");
+        update($result);
+end
+
+rule "Maternity Leave Half Pay - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact(seniorityMonths < 6)
+        $leave  : LeaveFact(leaveTypeName == "MATERNITY", leaveDays.intValue() <= 56)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 56 - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Maternity Leave Half Pay - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Maternity leave (seniority < 6 months): half pay.");
+        update($result);
+end
+
+rule "Maternity Leave Full Pay With Public Holiday - Senior Manager"
+    salience 8
+    when
+        $emp    : EmployeeFact(
+                    seniorityMonths > 60,
+                    position != null,
+                    position in ("MANAGER", "DIRECTOR", "VP", "C_LEVEL")
+                  )
+        $leave  : LeaveFact(
+                    leaveTypeName == "MATERNITY",
+                    leaveDays.intValue() <= 56,
+                    publicHolidayDays > 0
+                  )
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int effectiveDays = $leave.getLeaveDays().intValue() - $leave.getPublicHolidayDays();
+        int remaining     = 56 - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Maternity Leave Full Pay With Public Holiday - Senior Manager");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage(
+            "Maternity leave (seniority > 5 years, manager+): full pay. " +
+            "Public holidays (" + $leave.getPublicHolidayDays() + " day(s)) excluded. " +
+            "Effective leave days: " + effectiveDays + ". Remaining: " + remaining + " day(s)."
+        );
+        update($result);
+end
+
+// ============================================================
+// MISCARRIAGE LEAVE (all companies follow Labour Standards Act)
+// ============================================================
+
+rule "Miscarriage Leave Under 12 Weeks - Exceeds Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "MISCARRIAGE",
+                            pregnancyWeeks < 12, leaveDays.intValue() > 5)
+        $result : LeaveResult(appliedRule == null)
+    then
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Miscarriage Leave Under 12 Weeks - Exceeds Limit");
+        $result.setMessage("Miscarriage leave (under 12 weeks) limit is 5 days.");
+        update($result);
+end
+
+rule "Miscarriage Leave Under 12 Weeks - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "MISCARRIAGE",
+                            pregnancyWeeks < 12, leaveDays.intValue() <= 5)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Miscarriage Leave Under 12 Weeks - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Miscarriage leave (under 12 weeks): half pay, 5 days.");
+        update($result);
+end
+
+rule "Miscarriage Leave 12 to 20 Weeks - Exceeds Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "MISCARRIAGE",
+                            pregnancyWeeks >= 12, pregnancyWeeks < 20,
+                            leaveDays.intValue() > 14)
+        $result : LeaveResult(appliedRule == null)
+    then
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Miscarriage Leave 12 to 20 Weeks - Exceeds Limit");
+        $result.setMessage("Miscarriage leave (12-20 weeks) limit is 14 days.");
+        update($result);
+end
+
+rule "Miscarriage Leave 12 to 20 Weeks - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "MISCARRIAGE",
+                            pregnancyWeeks >= 12, pregnancyWeeks < 20,
+                            leaveDays.intValue() <= 14)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Miscarriage Leave 12 to 20 Weeks - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Miscarriage leave (12-20 weeks): half pay, 14 days.");
+        update($result);
+end
+
+rule "Miscarriage Leave Over 20 Weeks - Exceeds Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "MISCARRIAGE",
+                            pregnancyWeeks >= 20, leaveDays.intValue() > 42)
+        $result : LeaveResult(appliedRule == null)
+    then
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Miscarriage Leave Over 20 Weeks - Exceeds Limit");
+        $result.setMessage("Miscarriage leave (20+ weeks) limit is 42 days.");
+        update($result);
+end
+
+rule "Miscarriage Leave Over 20 Weeks - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "MISCARRIAGE",
+                            pregnancyWeeks >= 20, leaveDays.intValue() <= 42)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Miscarriage Leave Over 20 Weeks - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Miscarriage leave (20+ weeks): full pay, 42 days.");
+        update($result);
+end
+
+// ============================================================
+// PRENATAL CHECKUP LEAVE
+// ============================================================
+
+rule "Prenatal Checkup Leave - Exceeds Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "PRENATAL_CHECKUP",
+                            usedDaysThisYear + leaveDays.intValue() > 7)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 7 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Prenatal Checkup Leave - Exceeds Limit");
+        $result.setMessage("Prenatal checkup leave limit is 7 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Prenatal Checkup Leave - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "PRENATAL_CHECKUP",
+                            usedDaysThisYear + leaveDays.intValue() <= 7)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 7 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Prenatal Checkup Leave - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Prenatal checkup leave: full pay for " + $leave.getLeaveDays() + " day(s).");
+        update($result);
+end
+
+// ============================================================
+// PRENATAL REST LEAVE
+// ============================================================
+
+rule "Prenatal Rest Leave - Exceeds Limit"
+    salience 10
+    when
+        $leave  : LeaveFact(leaveTypeName == "PRENATAL_REST",
+                            usedDaysThisYear + leaveDays.intValue() > 365)
+        $result : LeaveResult(appliedRule == null)
+    then
+        int remaining = 365 - $leave.getUsedDaysThisYear();
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining < 0 ? 0 : remaining);
+        $result.setAppliedRule("Prenatal Rest Leave - Exceeds Limit");
+        $result.setMessage("Prenatal rest leave annual limit is 365 days. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+rule "Prenatal Rest Leave - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "PRENATAL_REST",
+                            usedDaysThisYear + leaveDays.intValue() <= 365)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        int remaining = 365 - $leave.getUsedDaysThisYear() - $leave.getLeaveDays().intValue();
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(remaining);
+        $result.setAppliedRule("Prenatal Rest Leave - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Prenatal rest leave: half pay. Remaining: " + remaining + " day(s).");
+        update($result);
+end
+
+// ============================================================
+// PARENTAL LEAVE
+// ============================================================
+
+rule "Parental Leave - Seniority Not Met"
+    salience 10
+    when
+        $emp    : EmployeeFact(seniorityMonths < 6)
+        $leave  : LeaveFact(leaveTypeName == "PARENTAL")
+        $result : LeaveResult(appliedRule == null)
+    then
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Parental Leave - Seniority Not Met");
+        $result.setMessage("Parental leave requires at least 6 months of seniority.");
+        update($result);
+end
+
+rule "Parental Leave - Exceeds Limit"
+    salience 10
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 6)
+        $leave  : LeaveFact(leaveTypeName == "PARENTAL", leaveDays.intValue() > 730)
+        $result : LeaveResult(appliedRule == null)
+    then
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Parental Leave - Exceeds Limit");
+        $result.setMessage("Parental leave limit is 730 days (24 months).");
+        update($result);
+end
+
+rule "Parental Leave - Approved"
+    salience 5
+    when
+        $emp    : EmployeeFact(seniorityMonths >= 6)
+        $leave  : LeaveFact(leaveTypeName == "PARENTAL", leaveDays.intValue() <= 730)
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(730 - $leave.getLeaveDays().intValue());
+        $result.setAppliedRule("Parental Leave - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Parental leave: unpaid, max 730 days.");
+        update($result);
+end
+
+// ============================================================
+// OFFICIAL LEAVE
+// ============================================================
+
+rule "Official Leave - Approved"
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "OFFICIAL")
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(-1);
+        $result.setAppliedRule("Official Leave - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Official leave: full pay. No deduction from perfect attendance bonus.");
+        update($result);
+end
+
+// ============================================================
+// COMPENSATORY LEAVE
+// ============================================================
+
+rule "Compensatory Leave - Approved"
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "COMPENSATORY")
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(-1);
+        $result.setAppliedRule("Compensatory Leave - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Compensatory leave: no pay deduction.");
+        update($result);
+end
+
+// ============================================================
+// NATURAL DISASTER LEAVE
+// ============================================================
+
+rule "Natural Disaster Leave - Approved"
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "NATURAL_DISASTER")
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(-1);
+        $result.setAppliedRule("Natural Disaster Leave - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Natural disaster leave: full pay.");
+        update($result);
+end
+
+// ============================================================
+// WORK SUSPENSION LEAVE
+// ============================================================
+
+rule "Work Suspension Leave - Approved"
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "WORK_SUSPENSION")
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(-1);
+        $result.setAppliedRule("Work Suspension Leave - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Work suspension leave: full pay.");
+        update($result);
+end
+
+// ============================================================
+// OCCUPATIONAL INJURY LEAVE
+// ============================================================
+
+rule "Occupational Injury Leave - Approved"
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "OCCUPATIONAL_INJURY")
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(-1);
+        $result.setAppliedRule("Occupational Injury Leave - Approved");
+        $result.setAffectFullAttendance(false);
+        $result.setMessage("Occupational injury leave: full pay for duration of medical recovery.");
+        update($result);
+end
+
+// ============================================================
+// ABSENCE WITHOUT LEAVE
+// ============================================================
+
+rule "Absence Without Leave - Deduct"
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "ABSENCE")
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Absence Without Leave - Deduct");
+        $result.setAffectFullAttendance(true);
+        $result.setMessage("Absence without leave: full pay deducted. Perfect attendance bonus forfeited.");
+        update($result);
+end
+
+// ============================================================
+// UNPAID LEAVE
+// ============================================================
+
+rule "Unpaid Leave of Absence - Approved"
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "UNPAID")
+        $result : LeaveResult(approved == true, appliedRule == null)
+    then
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(-1);
+        $result.setAppliedRule("Unpaid Leave of Absence - Approved");
+        $result.setAffectFullAttendance(true);
+        $result.setMessage("Unpaid leave of absence: no pay.");
+        update($result);
+end
+
+// ============================================================
+// BIRTHDAY LEAVE - BASE
+// ============================================================
+
+rule "Birthday Leave - Not Applicable - Base"
+    salience 5
+    when
+        $emp    : EmployeeFact(companyId not in ("COMPANY_A", "COMPANY_B", "COMPANY_C"))
+        $leave  : LeaveFact(leaveTypeName == "BIRTHDAY")
+        $result : LeaveResult(appliedRule == null)
+    then
+        $result.setApproved(false);
+        $result.setDeductAmount(BigDecimal.ZERO);
+        $result.setRemainingDays(0);
+        $result.setAppliedRule("Birthday Leave - Not Applicable");
+        $result.setMessage("[" + $emp.getCompanyId() + "] Birthday leave is not part of this company's policy.");
+        update($result);
+end

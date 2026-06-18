@@ -1,0 +1,535 @@
+package rules.timecheck
+
+// ── 資料模型 ──────────────────────────────────────────────────
+import com.function.model.TimeCheckFact
+import com.function.model.TimeCheckFact.LeaveApplication
+import com.function.model.TimeCheckFact.OvertimeApplication
+import com.function.model.TimeCheckResult
+import java.time.LocalDateTime
+import java.time.Duration
+import java.util.List
+
+import static com.function.util.RuleUtils.minutesBetween
+import static com.function.util.RuleUtils.hoursBetween
+import static com.function.util.RuleUtils.isBetween
+import static com.function.util.RuleUtils.between
+import static com.function.util.RuleUtils.haversineDistance
+import static com.function.util.RuleUtils.add
+import static com.function.util.RuleUtils.subtract
+import static com.function.util.RuleUtils.multiply
+import static com.function.util.RuleUtils.divide
+import static com.function.util.RuleUtils.gt
+import static com.function.util.RuleUtils.gte
+import static com.function.util.RuleUtils.lt
+import static com.function.util.RuleUtils.lte
+import static com.function.util.RuleUtils.eq
+
+
+
+// ============================================================
+// ✅ DRL function 區塊：特殊計算邏輯
+//    適用於：本規則檔專屬、或 AI 動態新增的一次性計算
+//    優勢：AI 生成新規則時可同時在此區塊新增 function，
+//          完全不需要修改任何 Java 檔案
+// ============================================================
+
+/**
+ * 計算請假補時後的有效上班時間
+ * 遍歷所有請假申請，找出能補回最早時間點
+ */
+function LocalDateTime resolveEffectiveClockIn(
+        LocalDateTime rawIn,
+        LocalDateTime scheduleStart,
+        List leaves) {
+
+    if (rawIn == null || scheduleStart == null) return rawIn;
+    if (!rawIn.isAfter(scheduleStart)) return rawIn;
+
+    LocalDateTime best = rawIn;
+    for (Object obj : leaves) {
+        LeaveApplication leave = (LeaveApplication) obj;
+        if (leave.getLeaveStart() == null || leave.getLeaveEnd() == null) continue;
+        LocalDateTime ls = leave.getLeaveStart();
+        LocalDateTime le = leave.getLeaveEnd();
+        if (!le.isAfter(scheduleStart)) continue;
+        if (!ls.isBefore(rawIn))        continue;
+        if (!ls.isAfter(scheduleStart)) return scheduleStart; // 完全涵蓋
+        if (ls.isBefore(best)) best = ls;
+    }
+    return best;
+}
+
+/**
+ * 計算請假補時後的有效下班時間
+ */
+function LocalDateTime resolveEffectiveClockOut(
+        LocalDateTime rawOut,
+        LocalDateTime scheduleEnd,
+        List leaves) {
+
+    if (rawOut == null || scheduleEnd == null) return rawOut;
+    if (!rawOut.isBefore(scheduleEnd)) return rawOut;
+
+    LocalDateTime best = rawOut;
+    for (Object obj : leaves) {
+        LeaveApplication leave = (LeaveApplication) obj;
+        if (leave.getLeaveStart() == null || leave.getLeaveEnd() == null) continue;
+        LocalDateTime ls = leave.getLeaveStart();
+        LocalDateTime le = leave.getLeaveEnd();
+        if (!ls.isBefore(scheduleEnd)) continue;
+        if (!le.isAfter(rawOut))       continue;
+        if (!le.isBefore(scheduleEnd)) return scheduleEnd; // 完全涵蓋
+        if (le.isAfter(best)) best = le;
+    }
+    return best;
+}
+
+/**
+ * 計算午休分鐘數
+ */
+function long calcLunchMinutes(LocalDateTime lunchOut, LocalDateTime lunchIn) {
+    if (lunchOut == null || lunchIn == null) return 0L;
+    if (!lunchIn.isAfter(lunchOut)) return 0L;
+    return Duration.between(lunchOut, lunchIn).toMinutes();
+}
+
+/**
+ * 計算加班總分鐘數
+ * 只計算班表結束後的加班申請
+ */
+function long calcOvertimeMinutes(LocalDateTime scheduleEnd, List overtimes) {
+    if (scheduleEnd == null || overtimes == null) return 0L;
+    long total = 0L;
+    for (Object obj : overtimes) {
+        OvertimeApplication ot = (OvertimeApplication) obj;
+        if (ot.getOvertimeStart() == null || ot.getOvertimeEnd() == null) continue;
+        LocalDateTime otStart = ot.getOvertimeStart().isBefore(scheduleEnd)
+                              ? scheduleEnd : ot.getOvertimeStart();
+        long mins = Duration.between(otStart, ot.getOvertimeEnd()).toMinutes();
+        if (mins > 0) total += mins;
+    }
+    return total;
+}
+
+/**
+ * 計算請假補計工時分鐘數（上班前空白補回）
+ */
+function long calcLeaveWorkMinutes(LocalDateTime rawIn,
+                                   LocalDateTime scheduleStart,
+                                   List leaves) {
+    if (rawIn == null || scheduleStart == null) return 0L;
+    long total = 0L;
+    for (Object obj : leaves) {
+        LeaveApplication leave = (LeaveApplication) obj;
+        if (leave.getLeaveStart() == null || leave.getLeaveEnd() == null) continue;
+        LocalDateTime ls = leave.getLeaveStart().isBefore(scheduleStart)
+                         ? scheduleStart : leave.getLeaveStart();
+        LocalDateTime le = leave.getLeaveEnd().isAfter(rawIn)
+                         ? rawIn : leave.getLeaveEnd();
+        if (le.isAfter(ls)) {
+            long mins = Duration.between(ls, le).toMinutes();
+            if (mins > 0) total += mins;
+        }
+    }
+    return total;
+}
+
+/**
+ * 取得原始上班打卡（補卡優先）
+ */
+function LocalDateTime getRawClockIn(LocalDateTime punchCorrection,
+                                     LocalDateTime clockIn) {
+    return punchCorrection != null ? punchCorrection : clockIn;
+}
+
+/**
+ * 取得原始下班打卡（補卡優先）
+ */
+function LocalDateTime getRawClockOut(LocalDateTime punchCorrection,
+                                      LocalDateTime clockOut) {
+    return punchCorrection != null ? punchCorrection : clockOut;
+}
+
+
+// ============================================================
+// 執行順序（salience 由高到低）：
+//   100  → Step 1：初始化 effectiveClockIn / Out
+//    90  → Step 2：上班容錯（遲到寬限）
+//    85  → Step 3：下班容錯（早退寬限）
+//    80  → Step 4：請假補時（上班前）
+//    75  → Step 5：請假補時（下班後）
+//    70  → Step 6：標記前置處理完成 + 補卡 Note
+//    20  → Step 7：早到判斷
+//    10  → Step 8：遲到判斷
+//    10  → Step 9：早退判斷
+//     5  → Step 10：月累計遲到豁免
+//   -10  → Step 11：工時計算
+//   -20  → Step 12：加班時數計算
+//   -30  → Step 13：最終統計 Note
+// ============================================================
+
+
+// ── Step 1：初始化 ────────────────────────────────────────────
+
+rule "Step1 - Init Effective Times"
+    salience 100
+    no-loop true
+    when
+        $f : TimeCheckFact(
+            toleranceResolved == false
+        )
+    then
+        LocalDateTime rawIn  = getRawClockIn($f.getPunchCorrectionIn(),  $f.getClockInTime());
+        LocalDateTime rawOut = getRawClockOut($f.getPunchCorrectionOut(), $f.getClockOutTime());
+
+        $f.setEffectiveClockIn(rawIn);
+        $f.setEffectiveClockOut(rawOut);
+        $f.getResult().setEffectiveClockIn(rawIn  != null ? rawIn.toString()  : "");
+        $f.getResult().setEffectiveClockOut(rawOut != null ? rawOut.toString() : "");
+        update($f);
+end
+
+
+// ── Step 2：上班容錯 ──────────────────────────────────────────
+//    使用 RuleUtils.minutesBetween 計算分鐘差
+
+rule "Step2 - Tolerance Clock In"
+    salience 90
+    no-loop true
+    when
+        $f : TimeCheckFact(
+            toleranceResolved == false,
+            effectiveClockIn  != null,
+            scheduleStartTime != null,
+            effectiveClockIn.isAfter(scheduleStartTime),
+            minutesBetween(scheduleStartTime, effectiveClockIn) <= toleranceMinutes
+        )
+    then
+        $f.setEffectiveClockIn($f.getScheduleStartTime());
+        $f.getResult().setEffectiveClockIn($f.getScheduleStartTime().toString());
+        $f.getResult().addNote("[容錯] 上班打卡在寬限 "
+            + $f.getToleranceMinutes() + " 分鐘內，視為準時。");
+        update($f);
+end
+
+
+// ── Step 3：下班容錯 ──────────────────────────────────────────
+//    使用 RuleUtils.minutesBetween 計算分鐘差
+
+rule "Step3 - Tolerance Clock Out"
+    salience 85
+    no-loop true
+    when
+        $f : TimeCheckFact(
+            toleranceResolved == false,
+            effectiveClockOut != null,
+            scheduleEndTime   != null,
+            effectiveClockOut.isBefore(scheduleEndTime),
+            minutesBetween(effectiveClockOut, scheduleEndTime) <= toleranceMinutes
+        )
+    then
+        $f.setEffectiveClockOut($f.getScheduleEndTime());
+        $f.getResult().setEffectiveClockOut($f.getScheduleEndTime().toString());
+        $f.getResult().addNote("[容錯] 下班打卡在寬限 "
+            + $f.getToleranceMinutes() + " 分鐘內，視為準時。");
+        update($f);
+end
+
+
+// ── Step 4：請假補時（上班前）────────────────────────────────
+//    使用 DRL function resolveEffectiveClockIn
+
+rule "Step4 - Leave Adjust Clock In"
+    salience 80
+    no-loop true
+    when
+        $f : TimeCheckFact(
+            leaveResolved     == false,
+            effectiveClockIn  != null,
+            scheduleStartTime != null,
+            effectiveClockIn.isAfter(scheduleStartTime)
+        )
+    then
+        LocalDateTime adjusted = resolveEffectiveClockIn(
+            $f.getEffectiveClockIn(),
+            $f.getScheduleStartTime(),
+            $f.getLeaveApplications()
+        );
+        if (adjusted.isBefore($f.getEffectiveClockIn())) {
+            $f.getResult().addNote("[請假補時] 上班前請假補時，有效上班時間由 "
+                + $f.getEffectiveClockIn() + " 調整為 " + adjusted + "。");
+            $f.setEffectiveClockIn(adjusted);
+            $f.getResult().setEffectiveClockIn(adjusted.toString());
+            update($f);
+        }
+end
+
+
+// ── Step 5：請假補時（下班後）────────────────────────────────
+//    使用 DRL function resolveEffectiveClockOut
+
+rule "Step5 - Leave Adjust Clock Out"
+    salience 75
+    no-loop true
+    when
+        $f : TimeCheckFact(
+            leaveResolved     == false,
+            effectiveClockOut != null,
+            scheduleEndTime   != null,
+            effectiveClockOut.isBefore(scheduleEndTime)
+        )
+    then
+        LocalDateTime adjusted = resolveEffectiveClockOut(
+            $f.getEffectiveClockOut(),
+            $f.getScheduleEndTime(),
+            $f.getLeaveApplications()
+        );
+        if (adjusted.isAfter($f.getEffectiveClockOut())) {
+            $f.getResult().addNote("[請假補時] 下班前請假補時，有效下班時間由 "
+                + $f.getEffectiveClockOut() + " 調整為 " + adjusted + "。");
+            $f.setEffectiveClockOut(adjusted);
+            $f.getResult().setEffectiveClockOut(adjusted.toString());
+            update($f);
+        }
+end
+
+
+// ── Step 6：標記完成 + 補卡 Note ─────────────────────────────
+
+rule "Step6 - Mark Resolved"
+    salience 70
+    no-loop true
+    when
+        $f : TimeCheckFact(
+            toleranceResolved == false,
+            effectiveClockIn  != null
+        )
+    then
+        $f.setToleranceResolved(true);
+        $f.setLeaveResolved(true);
+        if ($f.getPunchCorrectionIn() != null) {
+            $f.getResult().addNote("[補卡] 上班補卡：" + $f.getPunchCorrectionIn() + " 取代原始打卡。");
+        }
+        if ($f.getPunchCorrectionOut() != null) {
+            $f.getResult().addNote("[補卡] 下班補卡：" + $f.getPunchCorrectionOut() + " 取代原始打卡。");
+        }
+        update($f);
+end
+
+
+// ── Step 7：早到判斷 ──────────────────────────────────────────
+//    ✅ 改為 no-loop true，避免 lock-on-active 封鎖 Step6 的 update 觸發
+
+rule "Step7 - Check Early Arrival"
+    salience 20
+    no-loop true
+    when
+        $f : TimeCheckFact(
+            toleranceResolved            == true,
+            earlyArrival                 == false,
+            earlyArrivalToleranceMinutes  > 0,
+            effectiveClockIn             != null,
+            scheduleStartTime            != null,
+            effectiveClockIn.isBefore(
+                scheduleStartTime.minusMinutes(earlyArrivalToleranceMinutes)
+            )
+        )
+    then
+        long minutes = minutesBetween($f.getEffectiveClockIn(), $f.getScheduleStartTime());
+
+        $f.setEffectiveClockIn($f.getScheduleStartTime());
+        $f.getResult().setEffectiveClockIn($f.getScheduleStartTime().toString());
+        $f.setEarlyArrival(true);
+        $f.getResult().setEarlyArrival(true);
+        $f.getResult().setEarlyArrivalMinutes((int) minutes);
+        $f.getResult().setStatus("EARLY_ARRIVAL");
+        $f.getResult().addNote("[早到] 員工 " + $f.getEmployeeCode()
+            + " 提早 " + minutes + " 分鐘到班，有效上班時間修正為班表開始。");
+        update($f);
+end
+
+
+// ── Step 8：遲到判斷 ──────────────────────────────────────────
+//    ✅ 改為 no-loop true，避免 lock-on-active 封鎖 Step6 的 update 觸發
+
+rule "Step8 - Check Late"
+    salience 10
+    no-loop true
+    when
+        $f : TimeCheckFact(
+            toleranceResolved == true,
+            late              == false,
+            effectiveClockIn  != null,
+            scheduleStartTime != null,
+            effectiveClockIn.isAfter(scheduleStartTime)
+        )
+    then
+        long minutes = minutesBetween($f.getScheduleStartTime(), $f.getEffectiveClockIn());
+
+        $f.setLate(true);
+        $f.setLateMinutesCache((int) minutes);
+        $f.getResult().setLate(true);
+        $f.getResult().setLateMinutes((int) minutes);
+        $f.getResult().setStatus("LATE");
+        $f.getResult().addViolation("Time - Late",
+            "[遲到] 員工 " + $f.getEmployeeCode()
+            + " 有效上班時間晚於班表，遲到 " + minutes + " 分鐘。");
+        update($f);
+end
+
+
+// ── Step 9：早退判斷 ──────────────────────────────────────────
+//    ✅ 改為 no-loop true，避免 lock-on-active 封鎖 Step6 的 update 觸發
+
+rule "Step9 - Check Early Leave"
+    salience 10
+    no-loop true
+    when
+        $f : TimeCheckFact(
+            toleranceResolved == true,
+            earlyLeave        == false,
+            effectiveClockOut != null,
+            scheduleEndTime   != null,
+            effectiveClockOut.isBefore(scheduleEndTime)
+        )
+    then
+        long minutes = minutesBetween($f.getEffectiveClockOut(), $f.getScheduleEndTime());
+
+        $f.setEarlyLeave(true);
+        $f.getResult().setEarlyLeave(true);
+        $f.getResult().setEarlyLeaveMinutes((int) minutes);
+
+        if ("LATE".equals($f.getResult().getStatus())) {
+            $f.getResult().setStatus("LATE_AND_EARLY");
+        } else if (!"EARLY_ARRIVAL".equals($f.getResult().getStatus())) {
+            $f.getResult().setStatus("EARLY_LEAVE");
+        }
+        $f.getResult().addViolation("Time - Early Leave",
+            "[早退] 員工 " + $f.getEmployeeCode()
+            + " 有效下班時間早於班表，早退 " + minutes + " 分鐘。");
+        update($f);
+end
+
+
+// ── Step 10：月累計遲到豁免 ───────────────────────────────────
+
+rule "Step10 - Monthly Late Tolerance Exemption"
+    salience 5
+    no-loop true
+    when
+        $f : TimeCheckFact(
+            late                      == true,
+            allowedMonthlyLateMinutes  > 0,
+            isMonthlyLateWithinAllowance() == true
+        )
+    then
+        int thisLate    = $f.getLateMinutesCache();
+        int accumulated = $f.getMonthlyAccumulatedLateMinutes();
+        int allowed     = $f.getAllowedMonthlyLateMinutes();
+
+        $f.setLate(false);
+        $f.setLateMinutesCache(0);
+        $f.getResult().setLate(false);
+        $f.getResult().setLateMinutes(0);
+        $f.getResult().getViolations().removeIf(v -> v.contains("Time - Late"));
+        $f.getResult().setStatus("NORMAL");
+        $f.getResult().addNote("[月累計豁免] 本次遲到 " + thisLate
+            + " 分鐘，累計 " + (accumulated + thisLate)
+            + "/" + allowed + " 分鐘，在容許範圍內，本次不計違規。");
+        update($f);
+end
+
+
+// ── Step 11：工時計算 ─────────────────────────────────────────
+//    使用 DRL function calcLunchMinutes + calcLeaveWorkMinutes
+//    使用 RuleUtils.minutesBetween 計算工作分鐘
+
+rule "Step11 - Calculate Work Hours"
+    salience -10
+    no-loop true
+    when
+        $f : TimeCheckFact(
+            hoursCalculated   == false,
+            toleranceResolved == true,
+            effectiveClockIn  != null,
+            effectiveClockOut != null,
+            scheduleStartTime != null,
+            scheduleEndTime   != null
+        )
+    then
+        // 工作結束點：取 effectiveClockOut 與 scheduleEnd 的較早者
+        LocalDateTime workEnd = $f.getEffectiveClockOut().isBefore($f.getScheduleEndTime())
+                              ? $f.getEffectiveClockOut()
+                              : $f.getScheduleEndTime();
+
+        // ✅ 使用 RuleUtils.minutesBetween 計算實際工作分鐘
+        long actualMinutes = minutesBetween($f.getEffectiveClockIn(), workEnd);
+        if (actualMinutes < 0) actualMinutes = 0;
+
+        // ✅ 使用 DRL function 計算午休分鐘
+        long lunchMinutes = calcLunchMinutes($f.getLunchOutTime(), $f.getLunchInTime());
+        if (lunchMinutes > 0) {
+            actualMinutes -= lunchMinutes;
+            $f.getResult().setLunchBreakMinutes((int) lunchMinutes);
+        }
+
+        // ✅ 使用 DRL function 計算請假補計工時
+        LocalDateTime rawIn = $f.getPunchCorrectionIn() != null
+                            ? $f.getPunchCorrectionIn() : $f.getClockInTime();
+        long leaveWorkMinutes = calcLeaveWorkMinutes(
+            rawIn,
+            $f.getScheduleStartTime(),
+            $f.getLeaveApplications()
+        );
+
+        double totalWorkHours = (actualMinutes + leaveWorkMinutes) / 60.0;
+        if (totalWorkHours < 0) totalWorkHours = 0;
+
+        $f.setTotalWorkHours(totalWorkHours);
+        $f.getResult().setTotalWorkHours(totalWorkHours);
+        $f.setHoursCalculated(true);
+        update($f);
+end
+
+
+// ── Step 12：加班時數計算 ─────────────────────────────────────
+//    使用 DRL function calcOvertimeMinutes
+
+rule "Step12 - Calculate Overtime Hours"
+    salience -20
+    no-loop true
+    when
+        $f : TimeCheckFact(
+            hoursCalculated == true,
+            scheduleEndTime != null
+        )
+    then
+        // ✅ 使用 DRL function 計算加班分鐘
+        long overtimeMinutes = calcOvertimeMinutes(
+            $f.getScheduleEndTime(),
+            $f.getOvertimeApplications()
+        );
+        double overtimeHours = overtimeMinutes / 60.0;
+
+        $f.setOvertimeHours(overtimeHours);
+        $f.getResult().setOvertimeHours(overtimeHours);
+        $f.getResult().setOvertimeMinutes((int) overtimeMinutes);
+        update($f);
+end
+
+
+// ── Step 13：最終統計 Note ────────────────────────────────────
+
+rule "Step13 - Final Summary Note"
+    salience -30
+    no-loop true
+    when
+        $f : TimeCheckFact(
+            hoursCalculated == true
+        )
+    then
+        $f.getResult().addNote("[時數統計] 有效工時: "
+            + String.format("%.2f", $f.getTotalWorkHours())
+            + " 小時，加班: "
+            + String.format("%.2f", $f.getOvertimeHours()) + " 小時。");
+end

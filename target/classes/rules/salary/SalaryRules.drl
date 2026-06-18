@@ -1,0 +1,490 @@
+package rules.salary
+import java.math.BigDecimal
+import java.math.RoundingMode
+import com.function.model.EmployeeFact
+import com.function.model.LeaveFact
+import com.function.model.OvertimeFact
+import com.function.model.InsuranceFact
+import com.function.model.SalaryResult
+import static com.function.util.RuleUtils.calcLeaveDeduction
+import static com.function.util.RuleUtils.calcWeekdayOvertime
+import static com.function.util.RuleUtils.calcRestDayOvertime
+import static com.function.util.RuleUtils.calcNationalHolidayOvertime
+import static com.function.util.RuleUtils.calcStatutoryHolidayOvertime
+
+// 優先級定義：200 (全勤保障) -> 100 (計算) -> 10 (結算)
+
+// ============================================================
+// BLOCK 1：請假扣薪計算（計算邏輯全部委託 RuleUtils）
+// ============================================================
+
+// ── 100% 扣薪假別 ──────────────────────────────────────────
+
+// 1. 事假 (100% 扣薪)
+rule "Leave Deduction - 事假"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "事假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal deduct = calcLeaveDeduction($emp.getBaseSalary(), $leave.getLeaveHours(), "1.0");
+        $result.setLeaveDeduction($result.getLeaveDeduction().add(deduct));
+        $result.addRuleDetail("【請假扣薪】事假 " + $leave.getLeaveHours() + " 小時（100%扣薪），扣薪 -" + deduct);
+end
+
+// 2. 曠職 (100% 扣薪)
+rule "Leave Deduction - 曠職"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "曠職", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal deduct = calcLeaveDeduction($emp.getBaseSalary(), $leave.getLeaveHours(), "1.0");
+        $result.setLeaveDeduction($result.getLeaveDeduction().add(deduct));
+        $result.addRuleDetail("【請假扣薪】曠職 " + $leave.getLeaveHours() + " 小時（100%扣薪），扣薪 -" + deduct);
+end
+
+// 3. 住院病假 (100% 扣薪)
+rule "Leave Deduction - 住院病假"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "住院病假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal deduct = calcLeaveDeduction($emp.getBaseSalary(), $leave.getLeaveHours(), "1.0");
+        $result.setLeaveDeduction($result.getLeaveDeduction().add(deduct));
+        $result.addRuleDetail("【請假扣薪】住院病假 " + $leave.getLeaveHours() + " 小時（100%扣薪），扣薪 -" + deduct);
+end
+
+// 4. 安胎假 (100% 扣薪)
+rule "Leave Deduction - 安胎假"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "安胎假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal deduct = calcLeaveDeduction($emp.getBaseSalary(), $leave.getLeaveHours(), "1.0");
+        $result.setLeaveDeduction($result.getLeaveDeduction().add(deduct));
+        $result.addRuleDetail("【請假扣薪】安胎假 " + $leave.getLeaveHours() + " 小時（100%扣薪），扣薪 -" + deduct);
+end
+
+// 5. 家庭照顧假 (100% 扣薪)
+rule "Leave Deduction - 家庭照顧假"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "家庭照顧假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal deduct = calcLeaveDeduction($emp.getBaseSalary(), $leave.getLeaveHours(), "1.0");
+        $result.setLeaveDeduction($result.getLeaveDeduction().add(deduct));
+        $result.addRuleDetail("【請假扣薪】家庭照顧假 " + $leave.getLeaveHours() + " 小時（100%扣薪），扣薪 -" + deduct);
+end
+
+// 6. 育嬰假 (100% 扣薪)
+rule "Leave Deduction - 育嬰假"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "育嬰假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal deduct = calcLeaveDeduction($emp.getBaseSalary(), $leave.getLeaveHours(), "1.0");
+        $result.setLeaveDeduction($result.getLeaveDeduction().add(deduct));
+        $result.addRuleDetail("【請假扣薪】育嬰假 " + $leave.getLeaveHours() + " 小時（100%扣薪），扣薪 -" + deduct);
+end
+
+// 7. 留職停薪 (100% 扣薪)
+rule "Leave Deduction - 留職停薪"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "留職停薪", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal deduct = calcLeaveDeduction($emp.getBaseSalary(), $leave.getLeaveHours(), "1.0");
+        $result.setLeaveDeduction($result.getLeaveDeduction().add(deduct));
+        $result.addRuleDetail("【請假扣薪】留職停薪 " + $leave.getLeaveHours() + " 小時（100%扣薪），扣薪 -" + deduct);
+end
+
+// 8. 天然災害假 (100% 扣薪)
+rule "Leave Deduction - 天然災害假"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "天然災害假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal deduct = calcLeaveDeduction($emp.getBaseSalary(), $leave.getLeaveHours(), "1.0");
+        $result.setLeaveDeduction($result.getLeaveDeduction().add(deduct));
+        $result.addRuleDetail("【請假扣薪】天然災害假 " + $leave.getLeaveHours() + " 小時（100%扣薪），扣薪 -" + deduct);
+end
+
+// 9. 停班 (100% 扣薪)
+rule "Leave Deduction - 停班"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "停班", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal deduct = calcLeaveDeduction($emp.getBaseSalary(), $leave.getLeaveHours(), "1.0");
+        $result.setLeaveDeduction($result.getLeaveDeduction().add(deduct));
+        $result.addRuleDetail("【請假扣薪】停班 " + $leave.getLeaveHours() + " 小時（100%扣薪），扣薪 -" + deduct);
+end
+
+// ── 50% 扣薪假別 ──────────────────────────────────────────
+
+// 10. 普通病假 (50% 扣薪)
+rule "Leave Deduction - 普通病假"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "普通病假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal deduct = calcLeaveDeduction($emp.getBaseSalary(), $leave.getLeaveHours(), "0.5");
+        $result.setLeaveDeduction($result.getLeaveDeduction().add(deduct));
+        $result.addRuleDetail("【請假扣薪】普通病假 " + $leave.getLeaveHours() + " 小時（50%扣薪），扣薪 -" + deduct);
+end
+
+// 11. 生理假 (50% 扣薪)
+rule "Leave Deduction - 生理假"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $leave  : LeaveFact(leaveTypeName == "生理假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal deduct = calcLeaveDeduction($emp.getBaseSalary(), $leave.getLeaveHours(), "0.5");
+        $result.setLeaveDeduction($result.getLeaveDeduction().add(deduct));
+        $result.addRuleDetail("【請假扣薪】生理假 " + $leave.getLeaveHours() + " 小時（50%扣薪），扣薪 -" + deduct);
+end
+
+// 12. 產假 - 受僱未滿6個月 (50% 扣薪)
+rule "Leave Deduction - 產假 未滿6個月"
+    salience 100
+    when
+        $emp    : EmployeeFact(tenureMonths < 6)
+        $leave  : LeaveFact(leaveTypeName == "產假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal deduct = calcLeaveDeduction($emp.getBaseSalary(), $leave.getLeaveHours(), "0.5");
+        $result.setLeaveDeduction($result.getLeaveDeduction().add(deduct));
+        $result.addRuleDetail("【請假扣薪】產假（未滿6個月）" + $leave.getLeaveHours() + " 小時（50%扣薪），扣薪 -" + deduct);
+end
+
+// ── 0% 扣薪假別（給薪假）────────────────────────────────────
+
+// 13. 特休 (0% 扣薪)
+rule "Leave Deduction - 特休"
+    salience 100
+    when
+        $leave  : LeaveFact(leaveTypeName == "特休", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.addRuleDetail("【給薪假】特休 " + $leave.getLeaveHours() + " 小時，不扣薪 $0");
+end
+
+// 14. 喪假 (0% 扣薪)
+rule "Leave Deduction - 喪假"
+    salience 100
+    when
+        $leave  : LeaveFact(leaveTypeName == "喪假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.addRuleDetail("【給薪假】喪假 " + $leave.getLeaveHours() + " 小時，不扣薪 $0");
+end
+
+// 15. 婚假 (0% 扣薪)
+rule "Leave Deduction - 婚假"
+    salience 100
+    when
+        $leave  : LeaveFact(leaveTypeName == "婚假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.addRuleDetail("【給薪假】婚假 " + $leave.getLeaveHours() + " 小時，不扣薪 $0");
+end
+
+// 16. 公假 (0% 扣薪)
+rule "Leave Deduction - 公假"
+    salience 100
+    when
+        $leave  : LeaveFact(leaveTypeName == "公假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.addRuleDetail("【給薪假】公假 " + $leave.getLeaveHours() + " 小時，不扣薪 $0");
+end
+
+// 17. 公傷病假 (0% 扣薪)
+rule "Leave Deduction - 公傷病假"
+    salience 100
+    when
+        $leave  : LeaveFact(leaveTypeName == "公傷病假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.addRuleDetail("【給薪假】公傷病假 " + $leave.getLeaveHours() + " 小時，不扣薪 $0");
+end
+
+// 18. 產檢假 (0% 扣薪)
+rule "Leave Deduction - 產檢假"
+    salience 100
+    when
+        $leave  : LeaveFact(leaveTypeName == "產檢假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.addRuleDetail("【給薪假】產檢假 " + $leave.getLeaveHours() + " 小時，不扣薪 $0");
+end
+
+// 19. 陪產假 (0% 扣薪)
+rule "Leave Deduction - 陪產假"
+    salience 100
+    when
+        $leave  : LeaveFact(leaveTypeName == "陪產假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.addRuleDetail("【給薪假】陪產假 " + $leave.getLeaveHours() + " 小時，不扣薪 $0");
+end
+
+// 20. 產假 - 受僱滿6個月 (0% 扣薪)
+rule "Leave Deduction - 產假 滿6個月"
+    salience 100
+    when
+        $emp    : EmployeeFact(tenureMonths >= 6)
+        $leave  : LeaveFact(leaveTypeName == "產假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.addRuleDetail("【給薪假】產假（滿6個月）" + $leave.getLeaveHours() + " 小時，不扣薪 $0");
+end
+
+// 21. 流產假 (0% 扣薪)
+rule "Leave Deduction - 流產假"
+    salience 100
+    when
+        $leave  : LeaveFact(leaveTypeName == "流產假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.addRuleDetail("【給薪假】流產假 " + $leave.getLeaveHours() + " 小時，不扣薪 $0");
+end
+
+// 22. 補休 (0% 扣薪)
+rule "Leave Deduction - 補休"
+    salience 100
+    when
+        $leave  : LeaveFact(leaveTypeName == "補休", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.addRuleDetail("【給薪假】補休 " + $leave.getLeaveHours() + " 小時，不扣薪 $0");
+end
+
+// 23. 生日假 (0% 扣薪，公司福利假)
+rule "Leave Deduction - 生日假"
+    salience 100
+    when
+        $leave  : LeaveFact(leaveTypeName == "生日假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.addRuleDetail("【給薪假】生日假 " + $leave.getLeaveHours() + " 小時，不扣薪 $0（公司福利假）");
+end
+
+// ============================================================
+// BLOCK 2：加班費計算（計算邏輯全部委託 RuleUtils）
+// ============================================================
+
+// 平日加班（RuleUtils 內部自動處理 ≤2H / >2H 兩段）
+rule "Overtime - Weekday"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $ot     : OvertimeFact(overtimeType == "WEEKDAY", overtimeHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal bonus = calcWeekdayOvertime($emp.getBaseSalary(), $ot.getOvertimeHours());
+        $result.setOvertimeBonus($result.getOvertimeBonus().add(bonus));
+        $result.addRuleDetail("【加班費】平日加班 " + $ot.getOvertimeHours() + "H，加給 +" + bonus);
+end
+
+// 休息日加班（RuleUtils 內部自動處理三段式倍率）
+rule "Overtime - Rest Day"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $ot     : OvertimeFact(overtimeType == "REST_DAY", overtimeHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal bonus = calcRestDayOvertime($emp.getBaseSalary(), $ot.getOvertimeHours());
+        $result.setOvertimeBonus($result.getOvertimeBonus().add(bonus));
+        $result.addRuleDetail("【加班費】休息日加班 " + $ot.getOvertimeHours() + "H，加給 +" + bonus);
+end
+
+// 國定假日出勤（RuleUtils 內部自動處理 ≤8H / >8H）
+rule "Overtime - National Holiday"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $ot     : OvertimeFact(overtimeType == "NATIONAL_HOLIDAY", overtimeHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal bonus = calcNationalHolidayOvertime($emp.getBaseSalary(), $ot.getOvertimeHours());
+        $result.setOvertimeBonus($result.getOvertimeBonus().add(bonus));
+        $result.addRuleDetail("【加班費】國定假日出勤 " + $ot.getOvertimeHours() + "H，加給 +" + bonus);
+end
+
+// 例假日出勤（RuleUtils 內部自動處理 ≤8H / >8H）
+rule "Overtime - Statutory Holiday"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $ot     : OvertimeFact(overtimeType == "STATUTORY_HOLIDAY", overtimeHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal bonus = calcStatutoryHolidayOvertime($emp.getBaseSalary(), $ot.getOvertimeHours());
+        $result.setOvertimeBonus($result.getOvertimeBonus().add(bonus));
+        $result.addRuleDetail("【加班費】例假日出勤 " + $ot.getOvertimeHours() + "H，加給 +" + bonus);
+end
+
+// 特休出勤（與例假日同費率）
+rule "Overtime - Annual Leave Day"
+    salience 100
+    when
+        $emp    : EmployeeFact()
+        $ot     : OvertimeFact(overtimeType == "ANNUAL_LEAVE_DAY", overtimeHours > 0)
+        $result : SalaryResult()
+    then
+        BigDecimal bonus = calcStatutoryHolidayOvertime($emp.getBaseSalary(), $ot.getOvertimeHours());
+        $result.setOvertimeBonus($result.getOvertimeBonus().add(bonus));
+        $result.addRuleDetail("【加班費】特休出勤 " + $ot.getOvertimeHours() + "H，加給 +" + bonus);
+end
+
+// ============================================================
+// BLOCK 3：全勤獎金保障規則（salience 200）
+// ============================================================
+
+// 1. 婚假不得扣全勤獎金
+rule "FullAttendance - 婚假不得扣全勤獎金"
+    salience 200
+    when
+        $leave  : LeaveFact(leaveTypeName == "婚假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.setFullAttendancePenaltyExempt(true);
+        $result.addRuleDetail("【全勤保障】婚假：雇主不得扣發全勤獎金（勞工請假規則第 2 條）");
+end
+
+// 2. 喪假不得扣全勤獎金
+rule "FullAttendance - 喪假不得扣全勤獎金"
+    salience 200
+    when
+        $leave  : LeaveFact(leaveTypeName == "喪假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.setFullAttendancePenaltyExempt(true);
+        $result.addRuleDetail("【全勤保障】喪假：雇主不得扣發全勤獎金（勞工請假規則第 3 條）");
+end
+
+// 3. 公傷病假不得扣全勤獎金
+rule "FullAttendance - 公傷病假不得扣全勤獎金"
+    salience 200
+    when
+        $leave  : LeaveFact(leaveTypeName == "公傷病假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.setFullAttendancePenaltyExempt(true);
+        $result.addRuleDetail("【全勤保障】公傷病假：雇主不得扣發全勤獎金（勞基法第 59 條）");
+end
+
+// 4. 公假不得扣全勤獎金
+rule "FullAttendance - 公假不得扣全勤獎金"
+    salience 200
+    when
+        $leave  : LeaveFact(leaveTypeName == "公假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.setFullAttendancePenaltyExempt(true);
+        $result.addRuleDetail("【全勤保障】公假：雇主不得扣發全勤獎金（勞工請假規則第 7 條）");
+end
+
+// 5. 生理假不得影響全勤獎金及考績
+rule "FullAttendance - 生理假不得影響全勤"
+    salience 200
+    when
+        $leave  : LeaveFact(leaveTypeName == "生理假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.setFullAttendancePenaltyExempt(true);
+        $result.addRuleDetail("【全勤保障】生理假：雇主不得視為缺勤，不得影響全勤獎金、考績或為其他不利處分（性平法第 14 條）");
+end
+
+// 6. 產假不得影響全勤獎金及考績
+rule "FullAttendance - 產假不得影響全勤"
+    salience 200
+    when
+        $leave  : LeaveFact(leaveTypeName == "產假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.setFullAttendancePenaltyExempt(true);
+        $result.addRuleDetail("【全勤保障】產假：雇主不得視為缺勤，不得影響全勤獎金、考績或為其他不利處分（性平法第 15 條）");
+end
+
+// 7. 陪產假不得影響全勤獎金及考績
+rule "FullAttendance - 陪產假不得影響全勤"
+    salience 200
+    when
+        $leave  : LeaveFact(leaveTypeName == "陪產假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.setFullAttendancePenaltyExempt(true);
+        $result.addRuleDetail("【全勤保障】陪產假：雇主不得視為缺勤，不得影響全勤獎金、考績或為其他不利處分（性平法第 15 條）");
+end
+
+// 8. 產檢假不得影響全勤獎金及考績
+rule "FullAttendance - 產檢假不得影響全勤"
+    salience 200
+    when
+        $leave  : LeaveFact(leaveTypeName == "產檢假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.setFullAttendancePenaltyExempt(true);
+        $result.addRuleDetail("【全勤保障】產檢假：雇主不得視為缺勤，不得影響全勤獎金、考績或為其他不利處分（性平法第 15 條）");
+end
+
+// 9. 家庭照顧假不得影響全勤獎金及考績
+rule "FullAttendance - 家庭照顧假不得影響全勤"
+    salience 200
+    when
+        $leave  : LeaveFact(leaveTypeName == "家庭照顧假", leaveHours > 0)
+        $result : SalaryResult()
+    then
+        $result.setFullAttendancePenaltyExempt(true);
+        $result.addRuleDetail("【全勤保障】家庭照顧假：雇主不得視為缺勤，不得影響全勤獎金、考績或為其他不利處分（性平法第 20 條）");
+end
+
+// ============================================================
+// BLOCK 4：薪資結算彙總
+// ============================================================
+
+rule "Salary - Calculate Final Salary"
+    salience 10
+    when
+        $emp    : EmployeeFact()
+        $result : SalaryResult()
+    then
+        BigDecimal finalSalary = $emp.getBaseSalary()
+            .subtract($result.getLeaveDeduction())
+            .add($result.getOvertimeBonus())
+            .setScale(2, RoundingMode.HALF_UP);
+        $result.setFinalSalary(finalSalary);
+        $result.setAppliedRule("Salary - Calculate Final Salary");
+        $result.addRuleDetail("【結算】底薪 " + $emp.getBaseSalary()
+            + " - 請假扣 " + $result.getLeaveDeduction()
+            + " + 加班費 " + $result.getOvertimeBonus()
+            + " = 實領 " + finalSalary);
+        $result.setMessage("【員工實領明細】 底薪：" + $emp.getBaseSalary() +
+                           " ｜請假扣：-" + $result.getLeaveDeduction() +
+                           " ｜加班費：+" + $result.getOvertimeBonus() +
+                           " ｜實領薪資：" + finalSalary);
+end

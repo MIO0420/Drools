@@ -1,0 +1,16 @@
+{
+  "scriptFile" : "../DroolsHR-1.0-SNAPSHOT.jar",
+  "entryPoint" : "com.function.function.AiExplainFunction.parseRule",
+  "bindings" : [ {
+    "type" : "httpTrigger",
+    "direction" : "in",
+    "name" : "req",
+    "route" : "ai/parse-rule",
+    "methods" : [ "POST", "OPTIONS" ],
+    "authLevel" : "ANONYMOUS"
+  }, {
+    "type" : "http",
+    "direction" : "out",
+    "name" : "$return"
+  } ]
+}

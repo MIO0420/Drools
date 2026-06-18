@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kmodule xmlns="http://www.drools.org/xsd/kmodule">
+
+    <!-- 請假規則（獨立使用） -->
+    <kbase name="LeaveBase" packages="rules.leave">
+        <ksession name="LeaveSession"          type="stateful"/>
+        <ksession name="LeaveStatelessSession" type="stateless"/>
+    </kbase>
+
+    <!-- 加班規則（獨立使用） -->
+    <kbase name="OvertimeBase" packages="rules.overtime">
+        <ksession name="OvertimeSession" type="stateful"/>
+    </kbase>
+
+    <!-- 排班規則 -->
+    <kbase name="SchedulingBase" packages="rules.schedule">
+        <ksession name="SchedulingSession"          type="stateful"/>
+        <ksession name="SchedulingStatelessSession" type="stateless"/>
+    </kbase>
+
+    <!-- 打卡時間檢查 -->
+    <kbase name="ClockBase" packages="rules.clock">
+        <ksession name="ClockSession" type="stateful"/>
+    </kbase>
+
+    <!-- 上下班時間合規 -->
+    <kbase name="TimeCheckBase" packages="rules.timecheck">
+        <ksession name="TimeCheckSession" type="stateful"/>
+    </kbase>
+
+    <!--
+        ★ SalaryBase 已移除：
+           薪資規則完全由 KieSessionService 動態管理（從 Azure Blob 載入）
+           公司通用規則   → dynamicContainers["salary"]
+           公司客製化規則 → dynamicContainers["salary_company_{id}"]
+    -->
+
+</kmodule>

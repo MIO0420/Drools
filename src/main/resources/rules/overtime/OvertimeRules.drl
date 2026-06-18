@@ -1,0 +1,376 @@
+package rules.overtime
+
+import com.function.model.EmployeeFact
+import com.function.model.OvertimeFact
+import com.function.model.OvertimeResult
+
+// ============================================================
+// BLOCK 1：單日時數上限（第 32 條）
+// ============================================================
+
+rule "Daily Hard Limit - Total Hours Exceeded 12H"
+    salience 100
+    no-loop true
+    when
+        $ot     : OvertimeFact(
+                      overtimeType == "WEEKDAY",
+                      overtimeHours > 4B
+                  )
+        $result : OvertimeResult()
+    then
+        $result.addWarning("DAILY_HARD_LIMIT: 正常班(8H) + 加班(" + $ot.getOvertimeHours() + "H) 超過單日 12H 上限（勞基法第 32 條，無任何例外）");
+        $result.setViolated(true);
+end
+
+// ============================================================
+// BLOCK 2：平日加班
+// ============================================================
+
+rule "Weekday Overtime - Legal Range 0 to 4 Hours"
+    salience 50
+    no-loop true
+    when
+        $ot     : OvertimeFact(overtimeType == "WEEKDAY", overtimeHours > 0B, overtimeHours <= 4B)
+        $result : OvertimeResult()
+    then
+        $result.setAppliedRule("WEEKDAY_LEGAL: 平日加班 " + $ot.getOvertimeHours() + "H，符合勞基法第 32 條規定");
+end
+
+rule "Weekday Overtime - Daily Limit Exceeded 4H Warning"
+    salience 80
+    no-loop true
+    when
+        $ot     : OvertimeFact(overtimeType == "WEEKDAY", overtimeHours > 4B)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("WEEKDAY_DAILY_LIMIT_EXCEEDED: 平日加班 " + $ot.getOvertimeHours() + "H，超過每日延長工時 4H 上限（勞基法第 32 條）");
+        $result.setViolated(true);
+end
+
+// ============================================================
+// BLOCK 3：休息日加班
+// ============================================================
+
+rule "Rest Day Overtime - Legal Range"
+    salience 50
+    no-loop true
+    when
+        $ot     : OvertimeFact(overtimeType == "REST_DAY", overtimeHours > 0B, overtimeHours <= 12B)
+        $result : OvertimeResult()
+    then
+        $result.setAppliedRule("REST_DAY_LEGAL: 休息日出勤 " + $ot.getOvertimeHours() + "H，符合規定（時數計入月加班總量上限）");
+end
+
+rule "Rest Day Overtime - Exceeded 12H Hard Limit"
+    salience 100
+    no-loop true
+    when
+        $ot     : OvertimeFact(overtimeType == "REST_DAY", overtimeHours > 12B)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("REST_DAY_HARD_LIMIT: 休息日出勤 " + $ot.getOvertimeHours() + "H，超過單日 12H 絕對上限（勞基法第 32 條）");
+        $result.setViolated(true);
+end
+
+rule "Rest Day Overtime - Disaster Exception Not Counted in Monthly Limit"
+    salience 110
+    no-loop true
+    when
+        $ot     : OvertimeFact(overtimeType == "REST_DAY", disasterException == true, overtimeHours > 0B)
+        $result : OvertimeResult()
+    then
+        $result.setAppliedRule("REST_DAY_DISASTER_EXCEPTION: 因天災/事變/突發事件於休息日出勤 " + $ot.getOvertimeHours() + "H，依勞基法第 32 條第 3 項，此時數例外不計入每月加班上限額度");
+        $result.addNote("DISASTER_REST: 雇主須於事後給予勞工對等時數之補休");
+end
+
+// ============================================================
+// BLOCK 4：例假日出勤（第 40 條）
+// ============================================================
+
+rule "Regular Day Off - Disaster Exception Legal"
+    salience 110
+    no-loop true
+    when
+        $ot     : OvertimeFact(overtimeType == "REGULAR_DAY_OFF", disasterException == true, overtimeHours > 0B)
+        $result : OvertimeResult()
+    then
+        $result.setAppliedRule("REGULAR_DAY_OFF_DISASTER: 例假日因天災/事變/突發事件出勤 " + $ot.getOvertimeHours() + "H，符合勞基法第 40 條例外規定");
+        $result.addNote("DISASTER_MANDATORY: 雇主須給予勞工補休，並加給工資；此時數不受每日 12H 及每月加班上限限制");
+end
+
+rule "Regular Day Off - Attendance Warning (Article 40)"
+    salience 90
+    no-loop true
+    when
+        $ot     : OvertimeFact(overtimeType == "REGULAR_DAY_OFF", disasterException == false, overtimeHours > 0B)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("REGULAR_DAY_OFF_VIOLATION: 例假日出勤須符合勞基法第 40 條（天災/事變/突發事件），否則屬違法出勤，雇主須給予補休並加給工資");
+        $result.setViolated(true);
+end
+
+rule "Regular Day Off - Exceeded 12H Hard Limit"
+    salience 100
+    no-loop true
+    when
+        $ot     : OvertimeFact(overtimeType == "REGULAR_DAY_OFF", disasterException == false, overtimeHours > 12B)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("REGULAR_DAY_OFF_HARD_LIMIT: 例假日出勤 " + $ot.getOvertimeHours() + "H，超過單日 12H 絕對上限（勞基法第 32 條）");
+        $result.setViolated(true);
+end
+
+// ============================================================
+// BLOCK 5：國定假日出勤（第 37 條）
+// ============================================================
+
+rule "National Holiday Overtime - Legal with Note"
+    salience 50
+    no-loop true
+    when
+        $ot     : OvertimeFact(overtimeType == "NATIONAL_HOLIDAY", overtimeHours > 0B, overtimeHours <= 12B)
+        $result : OvertimeResult()
+    then
+        $result.setAppliedRule("NATIONAL_HOLIDAY_LEGAL: 國定假日出勤 " + $ot.getOvertimeHours() + "H，合法（勞基法第 37 條），雇主應加給工資");
+        $result.addNote("NATIONAL_HOLIDAY: 國定假日出勤時數仍計入每月加班上限額度（46H/54H）");
+end
+
+rule "National Holiday Overtime - Exceeded 12H Hard Limit"
+    salience 100
+    no-loop true
+    when
+        $ot     : OvertimeFact(overtimeType == "NATIONAL_HOLIDAY", overtimeHours > 12B)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("NATIONAL_HOLIDAY_HARD_LIMIT: 國定假日出勤 " + $ot.getOvertimeHours() + "H，超過單日 12H 絕對上限（勞基法第 32 條）");
+        $result.setViolated(true);
+end
+
+// ============================================================
+// BLOCK 6：月加班時數管制
+// ============================================================
+
+rule "Monthly Overtime - Within 46H (Legal)"
+    salience 60
+    no-loop true
+    when
+        $emp    : EmployeeFact(monthlyOvertimeHours > 0, monthlyOvertimeHours <= 46)
+        $result : OvertimeResult()
+    then
+        $result.addNote("MONTHLY_LEGAL: 本月累計加班 " + $emp.getMonthlyOvertimeHours() + "H，未超過法定 46H 上限");
+end
+
+rule "Monthly Overtime - Over 46H Without Agreement"
+    salience 80
+    no-loop true
+    when
+        $emp    : EmployeeFact(monthlyOvertimeHours > 46, laborCouncilAgreed == false)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("MONTHLY_LIMIT_EXCEEDED: 本月加班 " + $emp.getMonthlyOvertimeHours() + "H，超過法定 46H 上限，且未取得工會/勞資會議同意（勞基法第 32 條）");
+        $result.setViolated(true);
+end
+
+rule "Monthly Overtime - Over 46H But Within 54H With Agreement"
+    salience 80
+    no-loop true
+    when
+        $emp    : EmployeeFact(monthlyOvertimeHours > 46, monthlyOvertimeHours <= 54, laborCouncilAgreed == true)
+        $result : OvertimeResult()
+    then
+        $result.addNote("MONTHLY_EXTENDED_LEGAL: 本月加班 " + $emp.getMonthlyOvertimeHours() + "H，超過 46H 但未超過 54H，已取得勞資會議同意，符合彈性規定（勞基法第 32 條但書）");
+end
+
+rule "Monthly Overtime - Over 54H Warning (Even With Agreement)"
+    salience 90
+    no-loop true
+    when
+        $emp    : EmployeeFact(monthlyOvertimeHours > 54, laborCouncilAgreed == true)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("MONTHLY_LIMIT_EXCEEDED_EXTENDED: 本月加班 " + $emp.getMonthlyOvertimeHours() + "H，已超過勞資協議彈性上限 54H（勞基法第 32 條但書）");
+        $result.setViolated(true);
+end
+
+// ============================================================
+// BLOCK 7：季加班時數管制
+// ============================================================
+
+rule "Quarterly Overtime - Within 138H With Agreement (Legal)"
+    salience 60
+    no-loop true
+    when
+        $emp    : EmployeeFact(quarterlyOvertimeHours > 0, quarterlyOvertimeHours <= 138, laborCouncilAgreed == true)
+        $result : OvertimeResult()
+    then
+        $result.addNote("QUARTERLY_LEGAL: 本季累計加班 " + $emp.getQuarterlyOvertimeHours() + "H，未超過 138H 季上限");
+end
+
+rule "Quarterly Overtime - Over 138H Warning"
+    salience 90
+    no-loop true
+    when
+        $emp    : EmployeeFact(quarterlyOvertimeHours > 138, laborCouncilAgreed == true)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("QUARTERLY_LIMIT_EXCEEDED: 本季加班 " + $emp.getQuarterlyOvertimeHours() + "H，超過每 3 個月 138H 上限（勞基法第 32 條第 3 項）");
+        $result.setViolated(true);
+end
+
+// ============================================================
+// BLOCK 8：連續出勤天數（第 36 條）
+// ============================================================
+
+rule "Consecutive Work Days - Within Legal Limit"
+    salience 60
+    no-loop true
+    when
+        $emp    : EmployeeFact(consecutiveWorkDays > 0, consecutiveWorkDays <= 6)
+        $result : OvertimeResult()
+    then
+        $result.addNote("CONSECUTIVE_LEGAL: 連續出勤 " + $emp.getConsecutiveWorkDays() + " 天，符合勞基法第 36 條規定");
+end
+
+rule "Consecutive Work Days - Exceeded 6 Days"
+    salience 90
+    no-loop true
+    when
+        $emp    : EmployeeFact(consecutiveWorkDays > 6)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("CONSECUTIVE_DAYS_EXCEEDED: 連續出勤 " + $emp.getConsecutiveWorkDays() + " 天，違反勞基法第 36 條（每 7 日應有至少 1 天例假）");
+        $result.setViolated(true);
+end
+
+// ============================================================
+// BLOCK 9：每週休假天數（第 36 條）
+// ============================================================
+
+rule "Weekly Rest Days - Sufficient"
+    salience 60
+    no-loop true
+    when
+        $emp    : EmployeeFact(restDaysPerWeek >= 2)
+        $result : OvertimeResult()
+    then
+        $result.addNote("REST_DAYS_LEGAL: 每 7 日休假 " + $emp.getRestDaysPerWeek() + " 天，符合勞基法第 36 條規定");
+end
+
+rule "Weekly Rest Days - Insufficient"
+    salience 90
+    no-loop true
+    when
+        $emp    : EmployeeFact(restDaysPerWeek < 2)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("REST_DAYS_INSUFFICIENT: 每 7 日休假僅 " + $emp.getRestDaysPerWeek() + " 天，未達勞基法第 36 條規定之 2 天（例假 1 天 + 休息日 1 天）");
+        $result.setViolated(true);
+end
+
+// ============================================================
+// BLOCK 10：補休（第 32-1 條）
+// ============================================================
+
+rule "Compensatory Time Off - Valid Application"
+    salience 50
+    no-loop true
+    when
+        $ot     : OvertimeFact(compensatoryTimeOff == true, compensatoryExpired == false, overtimeHours > 0B)
+        $result : OvertimeResult()
+    then
+        $result.setAppliedRule("COMP_TIME_VALID: 補休申請合法，時數 " + $ot.getOvertimeHours() + "H（1:1 換算）（勞基法第 32-1 條）");
+        $result.addNote("COMP_TIME: 補休時數 " + $ot.getOvertimeHours() + "H，年度終結或契約終止前須使用完畢");
+end
+
+rule "Compensatory Time Off - Expired Must Pay Cash"
+    salience 80
+    no-loop true
+    when
+        $ot     : OvertimeFact(compensatoryTimeOff == true, compensatoryExpired == true, overtimeHours > 0B)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("COMP_EXPIRED: 補休已逾期，依勞基法第 32-1 條，雇主須折算現金發給，不得消滅補休時數 " + $ot.getOvertimeHours() + "H");
+end
+
+// ============================================================
+// BLOCK 11：2026 政策
+// ============================================================
+
+rule "2026 Policy - Makeup Work Day No Longer Exists"
+    salience 100
+    no-loop true
+    when
+        $ot     : OvertimeFact(overtimeType == "MAKEUP_WORK_DAY")
+        $result : OvertimeResult()
+    then
+        $result.addWarning("POLICY_2026: 2026 年起已無補班日制度，出勤類型 MAKEUP_WORK_DAY 已不適用，請改以 REST_DAY 類型重新送入計算");
+        $result.setViolated(true);
+end
+
+// ============================================================
+// BLOCK 12：童工保護（第 44~47 條）
+// ============================================================
+
+rule "Child Worker - Overtime Absolutely Prohibited"
+    salience 200
+    no-loop true
+    when
+        $emp    : EmployeeFact(childWorker == true)
+        $ot     : OvertimeFact(overtimeHours > 0B)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("CHILD_WORKER_OVERTIME_PROHIBITED: 15歲以上未滿16歲之童工，絕對禁止延長工時（勞基法第 47 條），任何加班均屬違法，無任何例外");
+        $result.setViolated(true);
+end
+
+rule "Child Worker - Daily Hours Check"
+    salience 200
+    no-loop true
+    when
+        $emp    : EmployeeFact(childWorker == true, dailyWorkHours > 8)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("CHILD_WORKER_DAILY_EXCEEDED: 童工每日工作時間不得超過 8 小時（勞基法第 47 條），目前排定 " + $emp.getDailyWorkHours() + " 小時，違反規定");
+        $result.setViolated(true);
+end
+
+rule "Child Worker - Weekly Hours Check"
+    salience 200
+    no-loop true
+    when
+        $emp    : EmployeeFact(childWorker == true, weeklyWorkHours > 40)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("CHILD_WORKER_WEEKLY_EXCEEDED: 童工每週工作時間不得超過 40 小時（勞基法第 47 條），目前排定 " + $emp.getWeeklyWorkHours() + " 小時，違反規定");
+        $result.setViolated(true);
+end
+
+// ============================================================
+// BLOCK 13：妊娠/哺乳期間女工保護（第 50~51 條）
+// ============================================================
+
+rule "Pregnant or Nursing Worker - Overtime Prohibited"
+    salience 200
+    no-loop true
+    when
+        $emp    : EmployeeFact(pregnantOrNursing == true)
+        $ot     : OvertimeFact(overtimeHours > 0B)
+        $result : OvertimeResult()
+    then
+        $result.addWarning("PREGNANT_NURSING_OVERTIME_PROHIBITED: 妊娠或哺乳期間之女性勞工，雇主不得使其延長工時（勞基法第 50、51 條），即使勞工個人同意亦屬無效，違反強制規定");
+        $result.setViolated(true);
+end
+
+// ============================================================
+// BLOCK 14：天災加班後須給予適當休息
+// ============================================================
+
+rule "Disaster Overtime - Rest Required After"
+    salience 110
+    no-loop true
+    when
+        $ot     : OvertimeFact(disasterException == true, overtimeHours > 0B)
+        $result : OvertimeResult()
+    then
+        $result.addNote("DISASTER_REST_REQUIRED: 因天災/事變/突發事件延長工時後，雇主依勞基法第 32 條第 3 項規定，須給予勞工對等時數之適當休息");
+end

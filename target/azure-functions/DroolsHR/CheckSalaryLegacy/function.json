@@ -1,0 +1,16 @@
+{
+  "scriptFile" : "../DroolsHR-1.0-SNAPSHOT.jar",
+  "entryPoint" : "com.function.function.CalculateSalaryLegacyFunction.run",
+  "bindings" : [ {
+    "type" : "httpTrigger",
+    "direction" : "in",
+    "name" : "req",
+    "route" : "checksalary/legacy",
+    "methods" : [ "POST" ],
+    "authLevel" : "ANONYMOUS"
+  }, {
+    "type" : "http",
+    "direction" : "out",
+    "name" : "$return"
+  } ]
+}
