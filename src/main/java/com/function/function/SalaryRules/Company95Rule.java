@@ -1302,4 +1302,29 @@ public class Company95Rule implements CompanySalaryRule {
         }
     }
 
+
+    // ★ 出勤調整（遲到/早退/完美出勤）— 對齊 DRL Company_95_Attendance_*
+    public void applyAttendanceAdjustments(java.util.List<AttendanceFact> attendances, SalaryResult result) {
+        if (attendances == null) return;
+        for (AttendanceFact att : attendances) {
+            if (att == null) continue;
+            int late  = att.getLateCount();
+            int early = att.getEarlyLeaveCount();
+            if (late >= 3) {
+                java.math.BigDecimal d = new java.math.BigDecimal("500").multiply(new java.math.BigDecimal(late / 3));
+                result.setLeaveDeduction(result.getLeaveDeduction().add(d));
+                result.addRuleDetail("【出勤扣減】遲到達 " + late + " 次，扣減 -" + d);
+            }
+            if (early >= 3) {
+                java.math.BigDecimal d = new java.math.BigDecimal("300").multiply(new java.math.BigDecimal(early / 3));
+                result.setLeaveDeduction(result.getLeaveDeduction().add(d));
+                result.addRuleDetail("【出勤扣減】早退達 " + early + " 次，扣減 -" + d);
+            }
+            if (late == 0 && early == 0 && att.isHasFullAttendance()) {
+                result.setCompanyBonus(result.getCompanyBonus().add(new java.math.BigDecimal("500")));
+                result.addRuleDetail("【公司津貼】公司25 出勤明細完美加成 +500");
+            }
+        }
+    }
+
 }

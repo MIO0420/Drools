@@ -912,6 +912,11 @@ public class Company94Rule implements CompanySalaryRule {
         return bonus;
     }
 
+    // ⚠ 以下三個舊輔助方法：演算法與 DRL 的 Attendance_* 規則「不一致」
+    //   （階梯式 -2500/-1200/-500 vs DRL 的 500×floor(late/3)），
+    //   且在 Legacy 路徑「從未被呼叫」。保留僅為向下相容，請勿再使用；
+    //   出勤扣款一律改走下方 applyAttendanceAdjustments()（已與 DRL 對齊）。
+    @Deprecated
     public BigDecimal calcLateDeduction(int lateCount) {
         if (lateCount >= 10) return new BigDecimal("-2500");
         if (lateCount >= 6)  return new BigDecimal("-1200");
@@ -923,16 +928,53 @@ public class Company94Rule implements CompanySalaryRule {
         return lateCount >= 10;
     }
 
+    @Deprecated
     public BigDecimal calcEarlyLeaveDeduction(int earlyLeaveCount) {
         if (earlyLeaveCount >= 3) return new BigDecimal("-800");
         return BigDecimal.ZERO;
     }
 
+    @Deprecated
     public BigDecimal calcPerfectAttendanceBonus(boolean hasFullAttendance, int lateCount, int earlyLeaveCount) {
         if (hasFullAttendance && lateCount == 0 && earlyLeaveCount == 0) {
             return new BigDecimal("500");
         }
         return BigDecimal.ZERO;
+    }
+
+    // ══════════════════════════════════════════════════════════
+    //  出勤調整（★修正 Java↔DRL 不一致：完全比照 DRL Company_94_Attendance_*）
+    //  原問題：Legacy 只用 AttendanceFact 設「全勤/缺勤旗標」，
+    //          從不依 lateCount/earlyLeaveCount 扣款，也不發完美出勤獎金；
+    //          但 DRL 有 LateDeduct/EarlyLeaveDeduct/PerfectBonus 會生效，
+    //          → 帶遲到/早退次數時，Drools 與 Legacy 結果不同。
+    //  對齊規則（與 DRL 逐字相同）：
+    //    遲到 lateCount>=3       → 扣 500 × floor(lateCount/3)   到 leaveDeduction
+    //    早退 earlyLeaveCount>=3 → 扣 300 × floor(earlyLeaveCount/3) 到 leaveDeduction
+    //    完美 late==0 && early==0 → 加 500 到 companyBonus
+    //  ☆ 需由 Legacy calculate() 對 Company94 額外呼叫一次（見檔末說明 / 函式 wiring）。
+    // ══════════════════════════════════════════════════════════
+    public void applyAttendanceAdjustments(java.util.List<AttendanceFact> attendances, SalaryResult result) {
+        if (attendances == null) return;
+        for (AttendanceFact att : attendances) {
+            if (att == null) continue;
+            int late  = att.getLateCount();
+            int early = att.getEarlyLeaveCount();
+            if (late >= 3) {
+                BigDecimal d = new BigDecimal("500").multiply(new BigDecimal(late / 3));
+                result.setLeaveDeduction(result.getLeaveDeduction().add(d));
+                result.addRuleDetail("【出勤扣款】公司94 遲到 " + late + " 次（500×" + (late / 3) + "），扣 " + d);
+            }
+            if (early >= 3) {
+                BigDecimal d = new BigDecimal("300").multiply(new BigDecimal(early / 3));
+                result.setLeaveDeduction(result.getLeaveDeduction().add(d));
+                result.addRuleDetail("【出勤扣款】公司94 早退 " + early + " 次（300×" + (early / 3) + "），扣 " + d);
+            }
+            if (late == 0 && early == 0) {
+                result.setCompanyBonus(result.getCompanyBonus().add(new BigDecimal("500")));
+                result.addRuleDetail("【完美出勤】公司94 無遲到早退，+500");
+            }
+        }
     }
 
     // ══════════════════════════════════════════════════════════
