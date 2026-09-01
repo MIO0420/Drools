@@ -27,6 +27,7 @@ com\function\model\AllowanceFact.class
 com\function\model\InsuranceFact.class
 com\function\function\CalculateSalaryFunction$SalaryResultWrapper.class
 com\function\model\TimeCheckFact.class
+com\function\function\SalaryRules\Company10Rule.class
 com\function\function\SalaryRules\Company1Rule.class
 com\function\function\CalculateSalaryFunction$AllowanceRequest.class
 com\function\function\CalculateSalaryLegacyFunction$SalaryRequestWrapper.class
