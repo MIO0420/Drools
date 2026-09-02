@@ -7,6 +7,7 @@
 ## 目錄
 
 - [專案簡介](#專案簡介)
+- [功能列表（API Endpoints）](#功能列表api-endpoints)
 - [技術架構](#技術架構)
 - [專案結構](#專案結構)
 - [環境需求](#環境需求)
@@ -21,6 +22,55 @@
 ## 專案簡介
 
 本專案將 Drools 規則引擎封裝成 Azure Functions，透過 HTTP 觸發器（HTTP Trigger）接收請求、載入 DRL 規則、執行規則運算後回傳結果，適合作為無伺服器（Serverless）架構下的規則判斷服務。
+
+系統以**台灣勞動基準法（勞基法）**為主要應用場景，涵蓋薪資、加班、請假、排班、出勤打卡等 HR 規則運算，並支援依 `companyId` 隔離的**公司客製化規則**，以及透過 AI 產生／解讀 DRL 規則的功能。
+
+---
+
+## 功能列表（API Endpoints）
+
+所有 Function 皆為 **HTTP Trigger**、`authLevel` 為 `ANONYMOUS`，本機路徑前綴為 `http://localhost:7071/api/`，雲端則為 `https://<你的FunctionApp>.azurewebsites.net/api/`。
+
+### 規則運算（核心業務）
+
+| 功能 | 方法 | 路由 | 說明 |
+|------|------|------|------|
+| **CalculateSalary** | POST | `calculatesalary` | 薪資計算主流程。彙整員工、出勤、加班、請假、津貼、保險、績效、專案等多種 Fact 進行綜合薪資運算，支援大量資料分批（chunk）處理，並透過 Application Insights 上報記憶體與效能。 |
+| **CalculateOvertime** | POST | `calculateovertime` | 加班費與加班合規檢查。依勞基法第 32、32-1、36、47、50~51 條，處理平日／休息日／國定假日／例假日加班、月季時數上限、連續出勤、補休、天災例外、童工與妊娠哺乳保護等規則。 |
+| **CalculateLeave** | POST | `calculateleave` | 請假審核與扣薪計算。依 `companyId` 載入對應規則集，判斷假別（事假、病假、婚假、喪假等）、天數上限、住院、妊娠週數等條件並決定是否核准。 |
+| **CheckScheduling** | POST | `checkscheduling` | 排班合規檢查（單筆／批次）。檢查連續工作天數、每週休假天數、輪班休息時數等排班規則。 |
+| **CheckSchedulingCrossDay** | POST | `checkscheduling/crossday` | 跨日排班合規檢查，處理跨日班別的相關規則。 |
+| **CheckTime** | POST | `checktime` | 出勤時間檢查（單筆／批次）。以 DRL 計算遲到、早退、早到、總工時、加班時數等，計算邏輯全數交由規則引擎處理。 |
+| **CheckClock** | POST | `checkclock` | 打卡地點檢查。後端以 Haversine 公式計算打卡座標與公司座標的距離（不信任前端傳入距離），再交由規則引擎判斷打卡是否合規。 |
+| **EvaluateUniversal** | POST | `evaluate/{moduleName}` | 通用規則評估入口。依路徑 `moduleName` 動態載入規則模組，並優先套用公司客製規則、找不到時 fallback 至通用規則。 |
+
+### 規則管理
+
+| 功能 | 方法 | 路由 | 說明 |
+|------|------|------|------|
+| **QueryRules** | GET | `rules/{*ruleSet}` | 查詢指定規則集目前的 DRL 內容（支援 CORS 預檢）。 |
+| **UpdateRules** | POST | `updaterules` | 新增／更新規則。可接收結構化條件（conditions/action）自動組成 DRL，或直接接收 `rawDrl`，並可選擇是否持久化存檔；支援公司客製規則。 |
+
+### AI 輔助（產生／解讀規則）
+
+| 功能 | 方法 | 路由 | 說明 |
+|------|------|------|------|
+| **GenerateRule** | POST | `generaterule` | 以自然語言透過 **Google Gemini** 產生 Drools DRL 規則，可選 `autoApply` 直接編譯套用。需設定環境變數 `GEMINI_API_KEY`。 |
+| **AiExplain** | POST | `ai/explain` | 將 DRL 規則翻譯成繁體中文自然語言說明，方便 HR 人員閱讀。 |
+| **AiParseRule** | POST | `ai/parse-rule` | 將自然語言需求解析為結構化規則資料（module、conditions、action 等），供 `UpdateRules` 使用。 |
+| **AiScoreConsistency** | POST | `ai/score-consistency` | 評估規則的一致性／衝突程度並給出評分。 |
+| **AiGenerateJava** | POST | `ai/generate-java` | 將 DRL 規則轉譯為可編譯的 Java 類別（實作 `CompanySalaryRule` 介面）。 |
+
+> AI 相關功能需設定對應的 API 金鑰環境變數（`GEMINI_API_KEY`、`IAI_API_KEY` 等），詳見[設定說明](#設定說明)。
+
+### 系統維運
+
+| 功能 | 方法 | 路由 | 說明 |
+|------|------|------|------|
+| **triggerGC** | GET / POST | `gc` | 手動觸發 JVM 垃圾回收，用於觀察／釋放記憶體。 |
+| **BenchmarkDrools** | POST | `benchmark/drools` | 效能測試：以 Drools 規則網路（Rete）執行員工／專案／關聯資料的聚合比對，回傳耗時與觸發規則數。 |
+| **BenchmarkLegacy** | POST | `benchmark/legacy` | 效能測試對照組：以傳統巢狀迴圈（O(N³)）執行相同聚合邏輯，用來與 Drools 版本比較效能。 |
+| **CheckSalaryLegacy** | POST | `checksalary/legacy` | 薪資檢查的傳統（非規則引擎）實作版本，作為對照。 |
 
 ---
 
@@ -224,13 +274,26 @@ Azure Functions 主機層級的設定檔，控制 logging、擴充套件版本�
   "IsEncrypted": false,
   "Values": {
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "java"
+    "FUNCTIONS_WORKER_RUNTIME": "java",
+    "GEMINI_API_KEY": "<你的 Google Gemini API 金鑰>",
+    "IAI_API_KEY": "<AI 服務金鑰（AiExplain 等功能使用）>"
   }
 }
 ```
 
+### 環境變數說明
+
+| 變數名稱 | 用途 | 使用的功能 |
+|----------|------|------------|
+| `AzureWebJobsStorage` | Azure Functions 執行所需的儲存體連線字串；DRL 規則檔亦存放於此 Blob Storage | 全部；規則存取（QueryRules / UpdateRules 等）|
+| `FUNCTIONS_WORKER_RUNTIME` | 固定為 `java` | 全部 |
+| `GEMINI_API_KEY` | Google Gemini API 金鑰 | GenerateRule |
+| `IAI_API_KEY` | AI 服務金鑰（規則解讀／轉譯）| AiExplain、AiParseRule、AiScoreConsistency、AiGenerateJava |
+
+> 若未設定對應金鑰，相關 AI 功能會回傳錯誤（例如「環境變數 GEMINI_API_KEY 未設定」），但不影響其他規則運算功能。
+
 部署到雲端後，正式環境的環境變數請改在 Azure 入口網站的
-**Function App → 設定 → 環境變數（Application settings）** 中設定。
+**Function App → 設定 → 環境變數（Application settings）** 中設定，**切勿**將金鑰寫入 `local.settings.json` 後上傳到 GitHub。
 
 ---
 
